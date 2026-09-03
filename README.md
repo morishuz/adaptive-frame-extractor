@@ -58,11 +58,11 @@ use without requiring Python or command-line setup.
 
 The current test release is **v0.2.0-rc.2**:
 
-- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
-- **Windows x64** — [ZIP](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
-- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
+- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
+- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
+- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
 
-See [GitHub Releases](https://github.com/morishuz/frame-extractor-desktop/releases)
+See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
 for all available versions.
 
 These builds are not yet production-signed releases. On macOS, you may need to
