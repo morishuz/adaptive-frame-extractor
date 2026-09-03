@@ -1,78 +1,96 @@
-![Frame Extractor desktop application](images/screenshot.png)
-
 # Frame Extractor
 
-Frame Extractor is a desktop application for selecting representative images
-from video. It can find frames automatically from camera motion, sample at a
-fixed interval, or save an individual frame chosen in the preview.
+**Adaptive video frame extraction for Structure from Motion, Gaussian Splatting,
+photogrammetry, and related 3D reconstruction workflows.**
 
-The application runs locally: videos do not need to be uploaded to a service.
+Frame Extractor turns video into image sequences for reconstruction pipelines
+such as COLMAP and Gaussian Splatting.
+
+Unlike conventional fixed-interval extraction, it can select keyframes
+dynamically based on camera motion. This reduces redundant images when the
+camera is stationary or moving slowly, while extracting frames more frequently
+during fast movement or rotation.
+
+The result is a smaller, more useful image set with better overlap between
+neighboring views.
+
+![Frame Extractor desktop application showing adaptive extraction and selected keyframes](images/screenshot.png)
+
+## Why adaptive extraction?
+
+A typical video-to-SfM workflow extracts every *N*th frame:
+
+```text
+Video → every 10th frame → images → SfM / Gaussian Splatting
+```
+
+The problem is that camera motion is rarely constant.
+
+When the camera stops or moves slowly, fixed sampling creates many nearly
+identical images. When it moves or rotates quickly, the same interval may leave
+too much change between frames, making feature matching and pose recovery
+harder.
+
+Frame Extractor adapts the spacing automatically:
+
+```text
+Slow motion:   ●             ●             ●
+Fast motion:   ●   ●   ●   ●   ●   ●   ●
+```
 
 ## Features
 
-- Low, Medium, and High automatic extraction profiles
-- Fixed sampling at `1/4`, `1/6`, `1/8`, `1/10`, `1/12`, or `1/16` of the
-  source frames
-- Frame-accurate navigation and multiple selectable timeline regions
-- JPEG or lossless PNG output at the video's original resolution
-- Manual extraction of the displayed frame, with duplicate protection
+- **Motion-adaptive keyframe extraction** with Low, Medium, and High presets
+- **Fixed-interval extraction** when exact sampling is preferred
+- **Multiple timeline regions** to extract only useful sections of a video
+- **Manual frame extraction** from the preview
+- **JPEG or lossless PNG** output at source resolution
+- Frame-accurate navigation and live preview
 - Optional separate output folders for each selected region
-- Live preview, tracking overlay, diagnostic graphs, and progress display
-- Cancellation without discarding frames that have already been saved
-- A command-line interface for scripted or headless use
+- CSV manifest, extraction settings, and summary saved alongside the images
+- Desktop GUI and command-line interface
+- All processing runs locally
+
+Frame Extractor is written in **C++20** and is designed to be fast and easy to
+use without requiring Python or command-line setup.
 
 ## Download
 
-Frame Extractor currently provides test packages for:
+Test packages are currently available for:
 
-- macOS on Apple Silicon as a DMG
-- Windows x64 as a ZIP archive
-- Ubuntu 24.04 x64 as a tar.gz archive
+- **macOS Apple Silicon** — DMG
+- **Windows x64** — ZIP
+- **Ubuntu 24.04 x64** — tar.gz
 
-Tagged [GitHub Releases](https://github.com/morishuz/frame-extractor-desktop/releases)
-contain all three packages and their SHA-256 checksums. Packages from ordinary
-builds are also available from a successful **Actions → CI** run under
-**Artifacts** for 14 days; GitHub may require you to sign in before downloading
-workflow artifacts.
+Download them from
+[GitHub Releases](https://github.com/morishuz/frame-extractor-desktop/releases).
+Each package has an accompanying SHA-256 checksum.
 
-These builds are not yet production-signed public releases. On macOS, you may
-need to right-click the application and choose **Open** the first time. Extract
-Windows and Linux archives completely and keep their `bin`, `lib`, and `share`
-directories together.
+These builds are not yet production-signed releases. On macOS, you may need to
+right-click the application and select **Open** the first time.
 
-macOS is the primary tested platform. Windows and Linux packages receive
-automated tests, but still need broader hands-on testing before a public
-release.
+macOS is currently the primary tested platform. Windows and Linux builds are
+also covered by automated tests.
 
-## Using the application
+## Using Frame Extractor
 
-1. Choose or drag a video into the application.
-2. Choose where the extracted images should be saved.
-3. Select an automatic profile or a fixed frame interval.
-4. Optionally use the timeline to define one or more extraction regions.
-5. Choose JPEG or PNG and select **Start extraction**.
+1. Drag a video into the application.
+2. Choose an output directory.
+3. Select an adaptive preset or fixed interval.
+4. Optionally mark one or more regions on the timeline.
+5. Choose JPEG or PNG.
+6. Click **Start extraction**.
 
-Low, Medium, and High control how frequently the automatic motion-based mode
-selects frames. Fixed interval mode ignores motion and selects an exact ratio
-of source frames.
+For adaptive extraction, **Low**, **Medium**, and **High** control how densely
+keyframes are selected.
 
-Use the timeline, arrow keys, or the **< Frame** and **Frame >** buttons to move
-through the video. Hold the keys or buttons to continue moving. **Set In (I)**
-and **Set Out (O)** create a region. Regions are remembered for each input
-video; **Clear regions** returns to whole-video extraction.
-
-Select **Extract** to save the frame currently displayed in the preview. Manual
-frames are saved at source resolution in a video-specific folder beneath
-`manual_frames` in the selected output directory. Extracting the same source
-frame again in the same format does not rewrite it.
-
-Every automatic extraction region includes its first and last processed frame.
-Use **Cancel** or press Esc to stop a run safely.
+You can also navigate frame-by-frame and use **Extract** to save individual
+frames manually.
 
 ## Output
 
-Automatic extraction creates a timestamped directory containing the images,
-a CSV manifest, the settings used, and a readable summary:
+Each run creates a timestamped directory containing the extracted images and
+metadata:
 
 ```text
 20260827_120000/
@@ -81,59 +99,45 @@ a CSV manifest, the settings used, and a readable summary:
   summary.txt
   keyframes/
     keyframe_0000_000000.jpg
+    keyframe_0001_000037.jpg
     ...
 ```
 
-When **Separate region folders** is enabled, images are grouped into
-`keyframes/region_01`, `keyframes/region_02`, and so on. JPEG is the default;
-PNG avoids additional lossy compression but creates larger files and takes
-longer to encode.
-
 ## Command-line interface
 
-After building from source, create an extraction run with:
+A CLI is included for scripted workflows:
 
 ```sh
 ./build/release/frame-extractor input.mp4 --output-dir output
 ```
 
-Pass a profile and process only part of a video with:
+Run the following for all available options:
 
 ```sh
-./build/release/frame-extractor input.mp4 \
-  --config configs/profiles/medium.yaml \
-  --start-frame 1000 \
-  --max-frames 500 \
-  --output-dir output
+./build/release/frame-extractor --help
 ```
 
-Run `frame-extractor --help` for all available options. Ctrl-C requests the
-same safe cancellation used by the desktop application.
+## Building from source
 
-## Build from source
+Frame Extractor uses C++20, CMake, FFmpeg, OpenCV, SDL3, Dear ImGui, yaml-cpp,
+and Catch2.
 
-The [local development guide](docs/development.md) contains complete dependency,
-build, test, and launch instructions for macOS, Windows, and Ubuntu Linux. A
-C++20 compiler, CMake, FFmpeg, OpenCV, SDL3, yaml-cpp, and Catch2 are required.
-
-Maintainer packaging, signing, and platform-validation instructions are in the
-[release guide](docs/releasing.md).
+See the [development guide](docs/development.md) for complete build instructions
+for macOS, Windows, and Ubuntu Linux. Maintainer packaging and release details
+are in the [release guide](docs/releasing.md).
 
 ## Current limitations
 
-- Automatic sharpness or blur-aware selection is not implemented.
-- macOS packages target Apple Silicon rather than Intel Macs.
-- Windows and Linux packages have automated coverage but limited hands-on
-  validation across different computers and graphics drivers.
-- The Linux archive targets Ubuntu 24.04 x64 and is not a universal AppImage.
+- Blur/sharpness-aware automatic selection is not yet implemented.
+- macOS packages currently target Apple Silicon.
+- Windows and Linux have received less hands-on testing than macOS.
 
-## Contributing and license
-
-Bug reports and focused contributions are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the short contribution guide.
-Please report security vulnerabilities privately as described in
-[SECURITY.md](SECURITY.md).
+## License
 
 Frame Extractor is released under the [MIT License](LICENSE). Distributed
-packages also contain third-party software covered by the notices in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+packages also contain third-party software covered by the
+[third-party notices](THIRD_PARTY_NOTICES.md).
+
+Bug reports and contributions are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md). Please report suspected security
+vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
