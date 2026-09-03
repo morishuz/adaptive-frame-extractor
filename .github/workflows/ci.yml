@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    uses: ./.github/workflows/package-macos.yml
+
+  windows:
+    uses: ./.github/workflows/package-windows.yml
+
+  linux:
+    uses: ./.github/workflows/package-linux.yml

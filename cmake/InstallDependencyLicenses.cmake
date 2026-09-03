@@ -1,0 +1,12 @@
+# Include the actual license texts resolved by the pinned vcpkg manifest.
+function(frame_extractor_install_dependency_licenses prefix destination)
+  file(GLOB copyright_files LIST_DIRECTORIES FALSE "${prefix}/share/*/copyright")
+  if(NOT copyright_files)
+    message(FATAL_ERROR "No vcpkg copyright files found beneath ${prefix}")
+  endif()
+  foreach(copyright_file IN LISTS copyright_files)
+    get_filename_component(share_dir "${copyright_file}" DIRECTORY)
+    get_filename_component(port "${share_dir}" NAME)
+    file(INSTALL "${copyright_file}" DESTINATION "${destination}" RENAME "${port}.txt")
+  endforeach()
+endfunction()

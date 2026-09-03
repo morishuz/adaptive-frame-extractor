@@ -1,0 +1,38 @@
+set(_bundle "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@FRAME_EXTRACTOR_MACOS_BUNDLE_NAME@.app")
+if(NOT EXISTS "${_bundle}")
+  message(FATAL_ERROR "macOS application bundle was not installed: ${_bundle}")
+endif()
+
+set(_dependency_dir "@FRAME_EXTRACTOR_MACOS_DEPENDENCY_DIR@")
+if(NOT IS_DIRECTORY "${_dependency_dir}")
+  message(FATAL_ERROR "macOS dependency directory does not exist: ${_dependency_dir}")
+endif()
+
+set(BU_CHMOD_BUNDLE_ITEMS ON)
+include(BundleUtilities)
+fixup_bundle("${_bundle}" "" "${_dependency_dir}")
+
+include("@CMAKE_CURRENT_SOURCE_DIR@/cmake/InstallDependencyLicenses.cmake")
+frame_extractor_install_dependency_licenses("@FRAME_EXTRACTOR_VCPKG_PREFIX@"
+  "${_bundle}/Contents/Resources/licenses/third-party")
+
+set(_identity "@FRAME_EXTRACTOR_MACOS_CODESIGN_IDENTITY@")
+if(_identity STREQUAL "")
+  set(_identity "-")
+endif()
+
+if(_identity STREQUAL "-")
+  execute_process(
+    COMMAND codesign --force --deep --sign - --timestamp=none "${_bundle}"
+    RESULT_VARIABLE _codesign_result
+  )
+else()
+  execute_process(
+    COMMAND codesign --force --deep --options runtime --timestamp
+      --sign "${_identity}" "${_bundle}"
+    RESULT_VARIABLE _codesign_result
+  )
+endif()
+if(NOT _codesign_result EQUAL 0)
+  message(FATAL_ERROR "codesign failed with exit code ${_codesign_result}")
+endif()

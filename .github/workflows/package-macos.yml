@@ -1,0 +1,216 @@
+name: Package macOS
+
+on:
+  workflow_call:
+    inputs:
+      sign:
+        description: Use optional Apple signing and notarization credentials
+        type: boolean
+        default: false
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      MACOS_CODESIGN_IDENTITY:
+        required: false
+      MACOS_NOTARY_APPLE_ID:
+        required: false
+      MACOS_NOTARY_TEAM_ID:
+        required: false
+      MACOS_NOTARY_PASSWORD:
+        required: false
+    outputs:
+      version:
+        description: Application version read from the built bundle
+        value: ${{ jobs.macos-arm64.outputs.version }}
+      dmg_name:
+        description: Disk image filename
+        value: ${{ jobs.macos-arm64.outputs.dmg_name }}
+      artifact_name:
+        description: Uploaded workflow artifact name
+        value: ${{ jobs.macos-arm64.outputs.artifact_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      dmg_name: ${{ steps.package.outputs.dmg_name }}
+      artifact_name: frame-extractor-macos-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Prepare vcpkg binary cache
+        id: vcpkg-cache
+        run: |
+          mkdir -p "${{ runner.temp }}/vcpkg-archives"
+          vcpkg_commit=$(git -C "$VCPKG_INSTALLATION_ROOT" rev-parse HEAD)
+          echo "toolchain_key=$vcpkg_commit-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg-cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg-cache.outputs.toolchain_key }}-
+
+      - name: Prepare optional Apple signing certificate
+        id: signing
+        env:
+          ENABLE_APPLE_SIGNING: ${{ inputs.sign }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          if [ "$ENABLE_APPLE_SIGNING" != true ] || [ -z "$MACOS_CERTIFICATE" ]; then
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            echo "Using an ad-hoc signature for this package."
+            exit 0
+          fi
+          if [ -z "$MACOS_CERTIFICATE_PASSWORD" ] || [ -z "$MACOS_CODESIGN_IDENTITY" ]; then
+            echo "Certificate, password, and signing identity must all be configured." >&2
+            exit 1
+          fi
+          certificate_path="$RUNNER_TEMP/frame-extractor-certificate.p12"
+          keychain_path="$RUNNER_TEMP/frame-extractor-signing.keychain-db"
+          keychain_password="frame-extractor-$GITHUB_RUN_ID"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          echo "identity=$MACOS_CODESIGN_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Install vcpkg dependencies
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-archives,readwrite"
+        run: >-
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install
+          --triplet arm64-osx-release
+          --overlay-triplets=cmake/triplets
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg-cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+
+      - name: Configure
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-archives,readwrite"
+        run: >-
+          cmake -S . -B build/package
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=arm64-osx-release
+          -DVCPKG_OVERLAY_TRIPLETS="${{ github.workspace }}/cmake/triplets"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+          -DFRAME_EXTRACTOR_BUILD_TESTS=ON
+          -DFRAME_EXTRACTOR_GUI_SMOKE_TEST=ON
+          -DFRAME_EXTRACTOR_PACKAGE_STANDALONE=ON
+          -DFRAME_EXTRACTOR_MACOS_CODESIGN_IDENTITY="${{ steps.signing.outputs.identity }}"
+
+      - name: Build and test
+        run: |
+          cmake --build build/package --parallel
+          ctest --test-dir build/package --output-on-failure
+
+      - name: Resolve package metadata
+        id: package
+        run: |
+          version=$(plutil -extract CFBundleShortVersionString raw \
+            "build/package/Frame Extractor.app/Contents/Info.plist")
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            expected_tag="v$version"
+            if [[ "$GITHUB_REF_NAME" != "$expected_tag" \
+              && "$GITHUB_REF_NAME" != "$expected_tag"-rc.* ]]; then
+              echo "Tag $GITHUB_REF_NAME does not match application version $version." >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=Frame-Extractor-$version-macOS-arm64.dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Build disk image
+        run: cmake --build build/package --target package
+
+      - name: Verify packaged application
+        run: |
+          dmg="build/package/${{ steps.package.outputs.dmg_name }}"
+          mount_point=$(mktemp -d "$RUNNER_TEMP/frame-extractor-dmg.XXXXXX")
+          cleanup() {
+            hdiutil detach "$mount_point" >/dev/null 2>&1 || true
+            rmdir "$mount_point" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point"
+          scripts/verify_macos_bundle.sh "$mount_point/Frame Extractor.app"
+          cmake "-DGUI=$mount_point/Frame Extractor.app/Contents/MacOS/Frame Extractor" \
+            "-DFIXTURE_TOOL=$PWD/build/package/frame_extractor_fixture_tool" \
+            "-DSOURCE_DIR=$PWD" "-DTEST_ROOT=$RUNNER_TEMP/frame-extractor-gui-smoke" \
+            -P tests/gui_smoke.cmake
+
+      - name: Sign and notarize disk image
+        if: inputs.sign
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          dmg="build/package/${{ steps.package.outputs.dmg_name }}"
+          if [ "$MACOS_CODESIGN_IDENTITY" = "-" ]; then
+            echo "Skipping notarization for the ad-hoc-signed build."
+            exit 0
+          fi
+          codesign --force --sign "$MACOS_CODESIGN_IDENTITY" --timestamp "$dmg"
+          if [ -z "$MACOS_NOTARY_APPLE_ID" ] || [ -z "$MACOS_NOTARY_TEAM_ID" ] \
+            || [ -z "$MACOS_NOTARY_PASSWORD" ]; then
+            echo "Notary credentials are incomplete; the signed DMG was not notarized."
+            exit 0
+          fi
+          xcrun notarytool submit "$dmg" --wait \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_PASSWORD"
+          xcrun stapler staple "$dmg"
+
+      - name: Create checksum
+        working-directory: build/package
+        run: >-
+          shasum -a 256 "${{ steps.package.outputs.dmg_name }}"
+          > "${{ steps.package.outputs.dmg_name }}.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frame-extractor-macos-arm64
+          path: |
+            build/package/${{ steps.package.outputs.dmg_name }}
+            build/package/${{ steps.package.outputs.dmg_name }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing keychain
+        if: always() && inputs.sign
+        run: |
+          keychain_path="$RUNNER_TEMP/frame-extractor-signing.keychain-db"
+          if [ -e "$keychain_path" ]; then
+            security delete-keychain "$keychain_path"
+          fi

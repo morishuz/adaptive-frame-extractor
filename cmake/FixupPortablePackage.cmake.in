@@ -1,0 +1,16 @@
+set(_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+include("@CMAKE_CURRENT_SOURCE_DIR@/cmake/InstallDependencyLicenses.cmake")
+frame_extractor_install_dependency_licenses(
+  "@FRAME_EXTRACTOR_VCPKG_PREFIX@" "${_prefix}/share/frame-extractor/licenses/third-party")
+
+if("@CMAKE_SYSTEM_NAME@" STREQUAL "Linux")
+  # vcpkg's shared libraries may retain build-tree RPATHs. Make every copied ELF
+  # library find its neighbours after the archive is moved to a different machine.
+  file(GLOB _libraries "${_prefix}/lib/*.so*")
+  foreach(_library IN LISTS _libraries)
+    if(NOT IS_SYMLINK "${_library}")
+      execute_process(COMMAND "@FRAME_EXTRACTOR_PATCHELF@" --set-rpath "$ORIGIN" "${_library}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    endif()
+  endforeach()
+endif()

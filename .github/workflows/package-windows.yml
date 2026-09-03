@@ -1,0 +1,108 @@
+name: Package Windows
+
+on:
+  workflow_call:
+    outputs:
+      artifact_name:
+        description: Uploaded workflow artifact name
+        value: ${{ jobs.windows-x64.outputs.artifact_name }}
+      archive_name:
+        description: Package archive filename
+        value: ${{ jobs.windows-x64.outputs.archive_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    outputs:
+      artifact_name: frame-extractor-windows-x64
+      archive_name: ${{ steps.package.outputs.archive_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Prepare vcpkg binary cache
+        id: vcpkg_cache
+        shell: pwsh
+        run: |
+          $cachePath = Join-Path $env:LOCALAPPDATA "vcpkg\archives"
+          New-Item -ItemType Directory -Force -Path $cachePath | Out-Null
+          $vcpkgCommit = git -C $env:VCPKG_INSTALLATION_ROOT rev-parse HEAD
+          "cache_path=$cachePath" >> $env:GITHUB_OUTPUT
+          "toolchain_key=$vcpkgCommit-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+      - name: Restore vcpkg binary cache
+        id: vcpkg_cache_restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.vcpkg_cache.outputs.cache_path }}
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-
+      - name: Install vcpkg dependencies
+        shell: pwsh
+        run: >-
+          vcpkg install
+          --triplet x64-windows-release
+          --overlay-triplets=cmake/triplets
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.vcpkg_cache.outputs.cache_path }}
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/ci -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-release
+          -DVCPKG_OVERLAY_TRIPLETS="${{ github.workspace }}/cmake/triplets"
+          -DFRAME_EXTRACTOR_BUILD_TESTS=ON
+          -DFRAME_EXTRACTOR_GUI_SMOKE_TEST=ON
+          -DFRAME_EXTRACTOR_PACKAGE_STANDALONE=ON
+      - name: Build and test
+        shell: pwsh
+        env:
+          SDL_RENDER_DRIVER: software
+        run: |
+          cmake --build build/ci --config Release --parallel
+          ctest --test-dir build/ci -C Release --output-on-failure
+      - name: Build package
+        run: cmake --build build/ci --config Release --target package
+      - name: Resolve package metadata
+        id: package
+        shell: pwsh
+        run: |
+          $archive = @(Get-Item build/ci/frame-extractor-*.zip)
+          if ($archive.Count -ne 1) { throw "Expected one ZIP archive" }
+          "archive_name=$($archive[0].Name)" >> $env:GITHUB_OUTPUT
+      - name: Test relocated package
+        shell: pwsh
+        env:
+          SDL_RENDER_DRIVER: software
+        run: |
+          $archive = Get-Item "build/ci/${{ steps.package.outputs.archive_name }}"
+          cmake "-DARCHIVE=$($archive.FullName)" `
+            "-DFIXTURE_TOOL=$PWD/build/ci/Release/frame_extractor_fixture_tool.exe" `
+            "-DTEST_ROOT=$env:RUNNER_TEMP/frame-extractor-package-tests" `
+            -P scripts/verify_package.cmake
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $archive = Get-Item "build/ci/${{ steps.package.outputs.archive_name }}"
+          $hash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($archive.Name)" | Set-Content -Encoding ascii "$($archive.FullName).sha256"
+      - name: Upload package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frame-extractor-windows-x64
+          path: |
+            build/ci/${{ steps.package.outputs.archive_name }}
+            build/ci/${{ steps.package.outputs.archive_name }}.sha256
+          if-no-files-found: error
+          retention-days: 14

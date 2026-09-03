@@ -1,0 +1,11 @@
+fixture: synthetic_dis_translation_v1
+reference_repository_commit: 31e2cfa23ee27aa2d6bb84f218006d1975c4a735
+reference_opencv_version: 4.13.0
+frame_size: 128x96
+translation_xy: 3,2
+grid_points: 24
+motion_score_p80: 3.6585294723510744
+in_bounds_points: 24
+in_bounds_ratio: 1.0
+first_current_point_xy: 18.85783576965332,18.10630226135254
+last_current_point_xy: 96.70097351074219,64.55143737792969

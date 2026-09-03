@@ -1,0 +1,36 @@
+# Medium extraction profile.
+# Larger inputs are aspect-preservingly resized to this pixel area; smaller inputs stay native.
+target_analysis_area_px: 518400
+max_step_norm_analysis_px: 25.0
+
+dis:
+  preset: ultrafast
+  finest_scale: 1
+  patch_size: 8
+  patch_stride: 8
+  gradient_descent_iterations: 12
+  variational_refinement_iterations: 0
+  use_spatial_propagation: true
+
+sampling:
+  grid_step_analysis_px: 40
+  min_margin_analysis_px: 4
+  lost_border_analysis_px: 6.0
+
+scoring:
+  percentile: 80.0
+
+trigger:
+  min_frames_since_keyframe: 2
+  max_frames_since_keyframe: 1000
+  main_threshold_analysis_px: 100.0
+  min_in_bounds_ratio: 0.40
+
+visualization:
+  motion_plot_color_rgb: [255, 190, 70]
+  points_plot_color_rgb: [120, 220, 90]
+  threshold_line_color_rgb: [40, 120, 255]
+  trigger_line_color_rgb: [255, 0, 0]
+
+output:
+  image_format: jpg

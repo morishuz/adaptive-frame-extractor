@@ -1,0 +1,29 @@
+{
+  "name": "frame-extractor-desktop",
+  "version-semver": "0.2.0",
+  "builtin-baseline": "6d9d7df564a1ccdaa994e4ad39ccd4a32360867b",
+  "dependencies": [
+    "catch2",
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat",
+        "swscale"
+      ]
+    },
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "intrinsics",
+        "jpeg",
+        "png",
+        "thread"
+      ]
+    },
+    "sdl3",
+    "yaml-cpp"
+  ]
+}

@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    uses: ./.github/workflows/package-macos.yml
+    with:
+      sign: true
+    secrets:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+      MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+
+  windows:
+    uses: ./.github/workflows/package-windows.yml
+
+  linux:
+    uses: ./.github/workflows/package-linux.yml
+
+  publish:
+    needs: [macos, windows, linux]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download macOS package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.macos.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Download Windows package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.windows.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Download Linux package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.linux.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Verify package checksums
+        working-directory: ${{ runner.temp }}/release-assets
+        env:
+          MACOS_DMG: ${{ needs.macos.outputs.dmg_name }}
+          WINDOWS_ARCHIVE: ${{ needs.windows.outputs.archive_name }}
+          LINUX_ARCHIVE: ${{ needs.linux.outputs.archive_name }}
+        run: |
+          sha256sum --check "$MACOS_DMG.sha256"
+          sha256sum --check "$WINDOWS_ARCHIVE.sha256"
+          sha256sum --check "$LINUX_ARCHIVE.sha256"
+          test -f "$MACOS_DMG"
+      - name: Publish GitHub release assets
+        working-directory: ${{ runner.temp }}/release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MACOS_DMG: ${{ needs.macos.outputs.dmg_name }}
+          WINDOWS_ARCHIVE: ${{ needs.windows.outputs.archive_name }}
+          LINUX_ARCHIVE: ${{ needs.linux.outputs.archive_name }}
+        run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "$MACOS_DMG" "$MACOS_DMG.sha256" \
+            "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE.sha256" \
+            "$LINUX_ARCHIVE" "$LINUX_ARCHIVE.sha256" \
+            --verify-tag \
+            --title "Frame Extractor $GITHUB_REF_NAME" \
+            --generate-notes \
+            "${release_flags[@]}"

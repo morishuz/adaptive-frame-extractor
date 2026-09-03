@@ -1,0 +1,115 @@
+name: Package Linux
+
+on:
+  workflow_call:
+    outputs:
+      artifact_name:
+        description: Uploaded workflow artifact name
+        value: ${{ jobs.linux-x64.outputs.artifact_name }}
+      archive_name:
+        description: Package archive filename
+        value: ${{ jobs.linux-x64.outputs.archive_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VCPKG_MAX_CONCURRENCY: "4"
+    outputs:
+      artifact_name: frame-extractor-linux-x64
+      archive_name: ${{ steps.package.outputs.archive_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Install Linux build and display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config \
+            autoconf autoconf-archive automake libtool libltdl-dev bison gperf nasm python3-jinja2 \
+            libx11-dev libxft-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxfixes-dev libxss-dev libxtst-dev \
+            libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev \
+            xvfb xauth patchelf
+      - name: Prepare vcpkg binary cache
+        id: vcpkg_cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
+          vcpkg_commit=$(git -C "$VCPKG_INSTALLATION_ROOT" rev-parse HEAD)
+          echo "toolchain_key=$vcpkg_commit-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Restore vcpkg binary cache
+        id: vcpkg_cache_restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-
+      - name: Install vcpkg dependencies
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-archives,readwrite"
+        run: >-
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install
+          --triplet x64-linux-release
+          --overlay-triplets=cmake/triplets
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: >-
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg_cache.outputs.toolchain_key }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
+      - name: Configure
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-archives,readwrite"
+        run: >-
+          cmake -S . -B build/ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-linux-release
+          -DVCPKG_OVERLAY_TRIPLETS="$PWD/cmake/triplets"
+          -DFRAME_EXTRACTOR_BUILD_TESTS=ON
+          -DFRAME_EXTRACTOR_GUI_SMOKE_TEST=ON
+          -DFRAME_EXTRACTOR_PACKAGE_STANDALONE=ON
+      - name: Build and test
+        env:
+          SDL_RENDER_DRIVER: software
+          SDL_VIDEO_DRIVER: x11
+        run: |
+          cmake --build build/ci --parallel 4
+          xvfb-run -a ctest --test-dir build/ci --output-on-failure
+      - name: Build package
+        run: cmake --build build/ci --target package
+      - name: Resolve package metadata
+        id: package
+        run: |
+          archives=("$PWD"/build/ci/frame-extractor-*.tar.gz)
+          test "${#archives[@]}" -eq 1
+          echo "archive_name=$(basename "${archives[0]}")" >> "$GITHUB_OUTPUT"
+      - name: Test relocated package
+        env:
+          SDL_RENDER_DRIVER: software
+          SDL_VIDEO_DRIVER: x11
+        run: |
+          archive="$PWD/build/ci/${{ steps.package.outputs.archive_name }}"
+          xvfb-run -a cmake "-DARCHIVE=$archive" \
+            "-DFIXTURE_TOOL=$PWD/build/ci/frame_extractor_fixture_tool" \
+            "-DTEST_ROOT=$RUNNER_TEMP/frame-extractor-package-tests" \
+            -P scripts/verify_package.cmake
+      - name: Create checksum
+        working-directory: build/ci
+        run: sha256sum "${{ steps.package.outputs.archive_name }}" > "${{ steps.package.outputs.archive_name }}.sha256"
+      - name: Upload package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frame-extractor-linux-x64
+          path: |
+            build/ci/${{ steps.package.outputs.archive_name }}
+            build/ci/${{ steps.package.outputs.archive_name }}.sha256
+          if-no-files-found: error
+          retention-days: 14
