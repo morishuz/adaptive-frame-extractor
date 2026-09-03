@@ -35,7 +35,7 @@ Frame Extractor adapts the spacing automatically:
 
 ```text
 Slow motion:   ●             ●             ●
-Fast motion:   ●   ●   ●   ●   ●   ●   ●
+Fast motion:   ●   ●   ●   ●   ●   ●   ●   ●
 ```
 
 ## Features
@@ -56,15 +56,14 @@ use without requiring Python or command-line setup.
 
 ## Download
 
-Test packages are currently available for:
+The current test release is **v0.2.0-rc.2**:
 
-- **macOS Apple Silicon** — DMG
-- **Windows x64** — ZIP
-- **Ubuntu 24.04 x64** — tar.gz
+- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
+- **Windows x64** — [ZIP](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
+- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/frame-extractor-desktop/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
 
-Download them from
-[GitHub Releases](https://github.com/morishuz/frame-extractor-desktop/releases).
-Each package has an accompanying SHA-256 checksum.
+See [GitHub Releases](https://github.com/morishuz/frame-extractor-desktop/releases)
+for all available versions.
 
 These builds are not yet production-signed releases. On macOS, you may need to
 right-click the application and select **Open** the first time.
