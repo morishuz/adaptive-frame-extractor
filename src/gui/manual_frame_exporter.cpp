@@ -96,12 +96,18 @@ std::filesystem::path sourceDirectoryName(const std::filesystem::path& input_vid
 
 std::filesystem::path outputPath(
     const std::filesystem::path& directory,
-    std::int64_t decoded_frame_index,
+    const DecodedFrame& frame,
     ImageFormat image_format) {
   std::ostringstream filename;
-  filename << "frame_" << std::setfill('0') << std::setw(6)
-           << std::max<std::int64_t>(0, decoded_frame_index) << '.'
-           << toString(image_format);
+  // Seek-derived frame ordinals can collide on variable-rate video. Use the
+  // source timestamp directly, without rounding it to a frame rate or seconds.
+  if (frame.pts) {
+    filename << "frame_pts_" << std::setfill('0') << std::setw(20) << *frame.pts;
+  } else {
+    filename << "frame_" << std::setfill('0') << std::setw(6)
+             << std::max<std::int64_t>(0, frame.decoded_frame_index);
+  }
+  filename << '.' << toString(image_format);
   return directory / filename.str();
 }
 
@@ -237,7 +243,7 @@ class ManualFrameExporter::Impl {
       }
 
       const auto output_path = outputPath(
-          frame_directory, selected->decoded_frame_index, image_format);
+          frame_directory, *selected, image_format);
       const bool already_exists = existingRegularFile(output_path);
 
       if (!already_exists) {

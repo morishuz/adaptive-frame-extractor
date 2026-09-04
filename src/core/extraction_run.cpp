@@ -1,10 +1,12 @@
 #include "frame_extractor/extraction_run.hpp"
 
 #include "frame_extractor/decoder.hpp"
+#include "extraction_source.hpp"
 
 #include <chrono>
 #include <exception>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -55,8 +57,9 @@ void appendError(std::string& destination, std::string message) {
 
 }  // namespace
 
-ExtractionRunResult runExtraction(
+ExtractionRunResult detail::runExtractionWithSource(
     ExtractionRunRequest request,
+    const ExtractionSourceFactory& source_factory,
     DiagnosticObserver* observer,
     const CancellationToken* cancellation,
     SelectedFrameSink* additional_selected_frame_sink,
@@ -67,15 +70,11 @@ ExtractionRunResult runExtraction(
   std::unique_ptr<RunOutputWriter> writer;
 
   try {
-    const bool adaptive_selection = !request.process_options.fixed_frame_interval;
-    VideoDecoder decoder{
-        request.input_video,
-        VideoDecoderOptions{
-            .target_analysis_area_px = adaptive_selection
-                ? std::optional<int>{request.config.target_analysis_area_px}
-                : std::nullopt,
-            .defer_full_bgr = true}};
-    outcome.video_info = decoder.info();
+    auto decoder = source_factory(request);
+    if (!decoder) {
+      throw std::runtime_error("Extraction source factory returned no source");
+    }
+    outcome.video_info = decoder->info();
 
     if (request.output_directory) {
       writer = std::make_unique<RunOutputWriter>(
@@ -96,15 +95,23 @@ ExtractionRunResult runExtraction(
       selected_sink = writer.get();
     }
 
-    outcome.processing = processFrames(
-        decoder,
-        request.config,
-        request.process_options,
-        observer,
-        cancellation,
-        selected_sink,
-        frame_preview_sink,
-        &outcome.processing);
+    try {
+      outcome.processing = processFrames(
+          *decoder,
+          request.config,
+          request.process_options,
+          observer,
+          cancellation,
+          selected_sink,
+          frame_preview_sink,
+          &outcome.processing);
+    } catch (...) {
+      // Capture metadata discovered during decoding before the source unwinds,
+      // so partial-failure reports describe the decoder that actually ran.
+      outcome.video_info = decoder->info();
+      throw;
+    }
+    outcome.video_info = decoder->info();
     outcome.runtime = std::chrono::duration<double>(Clock::now() - started);
 
     if (writer) {
@@ -155,6 +162,32 @@ ExtractionRunResult runExtraction(
         "Could not finalize partial output: " + currentExceptionMessage());
   }
   return outcome;
+}
+
+ExtractionRunResult runExtraction(
+    ExtractionRunRequest request,
+    DiagnosticObserver* observer,
+    const CancellationToken* cancellation,
+    SelectedFrameSink* additional_selected_frame_sink,
+    FramePreviewSink* frame_preview_sink,
+    RunOutputStartedCallback output_started) {
+  return detail::runExtractionWithSource(
+      std::move(request),
+      [](const ExtractionRunRequest& source_request) {
+        const bool adaptive = !source_request.process_options.fixed_frame_interval;
+        return std::make_unique<VideoDecoder>(
+            source_request.input_video,
+            VideoDecoderOptions{
+                .target_analysis_area_px = adaptive
+                    ? std::optional<int>{source_request.config.target_analysis_area_px}
+                    : std::nullopt,
+                .defer_full_bgr = true});
+      },
+      observer,
+      cancellation,
+      additional_selected_frame_sink,
+      frame_preview_sink,
+      std::move(output_started));
 }
 
 }  // namespace frame_extractor

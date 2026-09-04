@@ -1,5 +1,6 @@
 #include "frame_extractor/extraction_run.hpp"
 #include "fixture_support.hpp"
+#include "extraction_source.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace fe = frame_extractor;
@@ -76,5 +79,79 @@ TEST_CASE("extraction run removes empty output after early cancellation") {
   REQUIRE_FALSE(announced_run.empty());
   CHECK_FALSE(std::filesystem::exists(announced_run));
 
+  std::filesystem::remove_all(output);
+}
+
+namespace {
+
+class MetadataSource final : public fe::FrameSource {
+ public:
+  MetadataSource(bool fail, fe::CancellationToken* cancellation)
+      : fail_{fail}, cancellation_{cancellation} {
+    info_.width = 32;
+    info_.height = 24;
+    info_.time_base = {1, 1};
+    info_.average_frame_rate = {1, 1};
+  }
+
+  const fe::VideoInfo& info() const override { return info_; }
+
+  std::optional<fe::DecodedFrame> read() override {
+    if (read_count_++ > 0) {
+      if (fail_) {
+        throw std::runtime_error("injected decode failure");
+      }
+      if (cancellation_) {
+        cancellation_->requestCancellation();
+        return fe::DecodedFrame{};
+      }
+      return std::nullopt;
+    }
+    info_.hardware_accelerated_decode = true;
+    fe::DecodedFrame frame;
+    frame.bgr = cv::Mat(24, 32, CV_8UC3, cv::Scalar{20, 80, 140});
+    frame.pts = 0;
+    frame.time_base = info_.time_base;
+    return frame;
+  }
+
+ private:
+  fe::VideoInfo info_;
+  int read_count_{};
+  bool fail_{};
+  fe::CancellationToken* cancellation_{};
+};
+
+}  // namespace
+
+TEST_CASE("run reports retain decoder metadata discovered while processing") {
+  bool fail = false;
+  bool cancel = false;
+  SECTION("completed run") {}
+  SECTION("partial failure") { fail = true; }
+  SECTION("cancelled run") { cancel = true; }
+
+  const auto output = uniqueOutputDirectory("decoder_metadata");
+  fe::CancellationToken cancellation;
+  fe::ProcessOptions options;
+  options.fixed_frame_interval = 1U;
+  const auto result = fe::detail::runExtractionWithSource(
+      fe::ExtractionRunRequest{"video.mov", output, fe::Config{}, options, {}},
+      [&](const fe::ExtractionRunRequest&) {
+        return std::make_unique<MetadataSource>(fail, cancel ? &cancellation : nullptr);
+      },
+      nullptr, &cancellation);
+
+  CHECK(result.status == (fail ? fe::ExtractionRunStatus::failed
+      : cancel ? fe::ExtractionRunStatus::cancelled
+               : fe::ExtractionRunStatus::completed));
+  REQUIRE(result.video_info);
+  CHECK(result.video_info->hardware_accelerated_decode);
+  REQUIRE(result.outputs_finalized);
+  REQUIRE(result.output_paths);
+  const auto summary = readText(result.output_paths->summary_path);
+  const auto label = summary.find("Hardware decoding:");
+  REQUIRE(label != std::string::npos);
+  CHECK(summary.substr(label, summary.find('\n', label) - label).ends_with("Yes"));
   std::filesystem::remove_all(output);
 }

@@ -86,6 +86,12 @@ keyframes are selected.
 You can also navigate frame-by-frame and use **Extract** to save individual
 frames manually.
 
+Manual captures are saved under `manual_frames/<video-name>-<source-id>/`.
+Filenames use the original presentation timestamp (`frame_pts_<timestamp>`) to
+distinguish variable-frame-rate frames; videos without timestamps use frame
+numbers. Repeating a capture reuses its existing file. Older captures with
+frame-number filenames remain in place and may be saved again under the new name.
+
 ## Output
 
 Each run creates a timestamped directory containing the extracted images and

@@ -1,4 +1,5 @@
 #include "manual_frame_exporter.hpp"
+#include "fixture_support.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -83,7 +84,7 @@ class FakeSource final : public fe::FrameSource {
         info_.height,
         info_.width,
         CV_8UC3,
-        cv::Scalar{20.0, 80.0, 140.0});
+        cv::Scalar{20.0 + static_cast<double>(next_frame_), 80.0, 140.0});
     frame.decoded_frame_index = static_cast<std::int64_t>(
         std::llround(timestamp * 4.0));
     frame.pts = static_cast<std::int64_t>(std::llround(timestamp * 1000.0));
@@ -142,7 +143,7 @@ TEST_CASE("manual frame exporter seeks and saves the first frame at or after the
       snapshot.output_path.parent_path().filename().string();
   CHECK(source_directory.starts_with("film_cut-"));
   CHECK(source_directory.size() == std::string{"film_cut-"}.size() + 16U);
-  CHECK(snapshot.output_path.filename() == "frame_000013.png");
+  CHECK(snapshot.output_path.filename() == "frame_pts_00000000000000003250.png");
   CHECK_FALSE(snapshot.already_exists);
   CHECK(state->seek_target == 3.1);
 
@@ -224,7 +225,7 @@ TEST_CASE("manual frame exporter treats an existing capture as success without r
   const auto second = waitForTerminal(exporter);
   REQUIRE(second.phase == gui::ManualFrameExportPhase::complete);
 
-  CHECK(first.output_path.filename() == "frame_000012.jpg");
+  CHECK(first.output_path.filename() == "frame_pts_00000000000000003000.jpg");
   CHECK(second.output_path == first.output_path);
   CHECK(second.already_exists);
   CHECK(source_factory_calls == 2U);
@@ -276,4 +277,59 @@ TEST_CASE("manual frame exporter reports source failures") {
   CHECK(snapshot.phase == gui::ManualFrameExportPhase::failed);
   CHECK(snapshot.error.find("decoder unavailable") != std::string::npos);
   CHECK(snapshot.output_path.empty());
+}
+
+TEST_CASE("manual exports distinguish frames with colliding seek ordinals") {
+  TestDirectory output{"frame_extractor_manual_vfr"};
+  const auto state = std::make_shared<FakeSourceState>();
+  // Both timestamps round to ordinal zero in this source's seek estimate.
+  state->timestamps = {0.0, 0.04};
+  gui::ManualFrameExporter exporter{
+      [state](const std::filesystem::path&) {
+        return std::make_unique<FakeSource>(state);
+      }};
+  REQUIRE(exporter.start("vfr.mov", output.path, 0.0, fe::ImageFormat::png));
+  const auto first = waitForTerminal(exporter);
+  REQUIRE(first.phase == gui::ManualFrameExportPhase::complete);
+  REQUIRE(exporter.start("vfr.mov", output.path, 0.04, fe::ImageFormat::png));
+  const auto second = waitForTerminal(exporter);
+  REQUIRE(second.phase == gui::ManualFrameExportPhase::complete);
+  REQUIRE(first.decoded_frame_index == second.decoded_frame_index);
+  CHECK(first.output_path != second.output_path);
+  CHECK_FALSE(second.already_exists);
+  CHECK(std::filesystem::is_regular_file(first.output_path));
+  CHECK(std::filesystem::is_regular_file(second.output_path));
+  const auto first_image = cv::imread(first.output_path.string());
+  const auto second_image = cv::imread(second.output_path.string());
+  REQUIRE_FALSE(first_image.empty());
+  REQUIRE_FALSE(second_image.empty());
+  CHECK(cv::norm(first_image, second_image, cv::NORM_INF) > 0.0);
+  REQUIRE(exporter.start("vfr.mov", output.path, 0.04, fe::ImageFormat::png));
+  const auto repeated = waitForTerminal(exporter);
+  CHECK(repeated.output_path == second.output_path);
+  CHECK(repeated.already_exists);
+}
+
+TEST_CASE("manual export uses the original timestamp of a real VFR frame") {
+  const fe::test::MaterializedFixture fixture{"vfr_timing.mov"};
+  TestDirectory output{"frame_extractor_manual_real_vfr"};
+  fe::VideoDecoder decoder{fixture.path()};
+  std::optional<fe::DecodedFrame> last;
+  while (auto frame = decoder.read()) {
+    last = std::move(frame);
+  }
+  REQUIRE(last);
+  REQUIRE(last->pts);
+  gui::ManualFrameExporter exporter;
+  REQUIRE(exporter.start(
+      fixture.path(), output.path,
+      fe::relativeTimestampSeconds(*last, decoder.info()), fe::ImageFormat::png));
+  const auto saved = waitForTerminal(exporter);
+  REQUIRE(saved.phase == gui::ManualFrameExportPhase::complete);
+  const auto timestamp = std::to_string(*last->pts);
+  CHECK(saved.output_path.filename()
+        == "frame_pts_" + std::string(20U - timestamp.size(), '0') + timestamp + ".png");
+  const auto image = cv::imread(saved.output_path.string());
+  REQUIRE_FALSE(image.empty());
+  CHECK(cv::norm(image, last->fullBgr(), cv::NORM_INF) == 0.0);
 }
