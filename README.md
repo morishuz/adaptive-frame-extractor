@@ -56,14 +56,21 @@ use without requiring Python or command-line setup.
 
 ## Download
 
-The current test release is **v0.2.0-rc.2**:
+Download published builds and SHA-256 checksums from
+[GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases).
 
-- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
-- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
-- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
+- **macOS Apple Silicon** — DMG
+- **Windows x64** — ZIP
+- **Ubuntu 24.04 x64** — DEB installer (recommended for new builds), or portable tar.gz
 
-See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
-for all available versions.
+The published **v0.2.0-rc.2** Linux release provides only the portable tar.gz.
+The new DEB installer and Linux desktop fixes are included in newer builds.
+Until a release containing them is published, download the
+`frame-extractor-linux-x64` artifact from a successful
+[CI run](https://github.com/morishuz/adaptive-frame-extractor/actions/workflows/ci.yml).
+Extract the artifact ZIP to access the DEB, portable archive, and checksums.
+GitHub requires sign-in to download CI artifacts; artifacts are retained for
+14 days.
 
 These builds are not yet production-signed releases. On macOS, you may need to
 right-click the application and select **Open** the first time.
@@ -73,7 +80,7 @@ also covered by automated tests.
 
 ### Linux desktop setup
 
-For Ubuntu 24.04 x64, prefer the `.deb` from a build containing Debian packages.
+For Ubuntu 24.04 x64, use the `.deb` installer from a newer build as described above.
 Install the downloaded file with apt (replace the filename with your download):
 
 ```sh
