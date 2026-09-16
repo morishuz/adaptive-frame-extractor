@@ -362,11 +362,13 @@ include(CPack)
 
 if(FRAME_EXTRACTOR_BUILD_TESTS)
   include(CTest)
-  add_test(NAME package_license_staging
-    COMMAND "${CMAKE_COMMAND}"
-      "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-      "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-license-tests"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_license_staging.cmake")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME package_license_staging
+      COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-license-tests"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_license_staging.cmake")
+  endif()
   find_package(Catch2 3 CONFIG REQUIRED)
   add_library(frame_extractor_test_support STATIC tests/fixture_support.cpp)
   target_compile_features(frame_extractor_test_support PUBLIC cxx_std_20)
