@@ -56,74 +56,21 @@ use without requiring Python or command-line setup.
 
 ## Download
 
-Download published builds and SHA-256 checksums from
-[GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases).
+The current test release is **v0.2.0-rc.2**:
 
-- **macOS Apple Silicon** — DMG
-- **Windows x64** — ZIP
-- **Ubuntu 24.04 x64** — DEB installer (recommended for new builds), or portable tar.gz
+- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
+- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
+- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
 
-The published **v0.2.0-rc.2** Linux release provides only the portable tar.gz.
-The new DEB installer and Linux desktop fixes are included in newer builds.
-Until a release containing them is published, download the
-`frame-extractor-linux-x64` artifact from a successful
-[CI run](https://github.com/morishuz/adaptive-frame-extractor/actions/workflows/ci.yml).
-Extract the artifact ZIP to access the DEB, portable archive, and checksums.
-GitHub requires sign-in to download CI artifacts; artifacts are retained for
-14 days.
+See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
+for all available versions.
 
-These builds are not yet production-signed releases. On macOS, you may need to
-right-click the application and select **Open** the first time.
+Newer Linux builds add a **DEB installer** with automatic desktop integration;
+see the [installation guide](docs/installation.md) for availability and setup.
 
-macOS is currently the primary tested platform. Windows and Linux builds are
-also covered by automated tests.
-
-### Linux desktop setup
-
-For Ubuntu 24.04 x64, use the `.deb` installer from a newer build as described above.
-Install the downloaded file with apt (replace the filename with your download):
-
-```sh
-sudo apt install ./frame-extractor_0.2.0_amd64.deb
-```
-
-The package installs **Frame Extractor** in the applications menu with its icon
-and installs required system libraries automatically. No launcher script is
-needed. Use `sudo apt remove frame-extractor` to uninstall it.
-
-If you previously registered a portable/development build, remove its user
-launcher so it does not override the system-installed one:
-
-```sh
-rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/io.github.morishuz.FrameExtractor.desktop"
-```
-
-#### Optional portable archive
-
-Extract the archive into a folder you intend to keep. From that folder, register
-the launcher and dock icon for your user (requires Python 3, no sudo):
-
-```sh
-python3 bin/install-desktop-integration.py
-```
-
-Then launch **Frame Extractor** from the applications menu and pin that launcher
-to your dock. Remove any old generic pin first. If you move the extracted folder
-or install a new version elsewhere, rerun the script from the new folder.
-To remove the launcher, delete
-`${XDG_DATA_HOME:-$HOME/.local/share}/applications/io.github.morishuz.FrameExtractor.desktop`.
-
-On Ubuntu/GNOME Wayland, native title-bar controls require the system decoration
-library and plugin:
-
-```sh
-sudo apt install libdecor-0-0 libdecor-0-plugin-1-gtk
-```
-
-Restart the app after installing them. **Quit** in the Actions area and **Ctrl+Q**
-also close the app, with a confirmation if extraction is running. On macOS the
-shortcut is **Cmd+Q**. Older Linux builds made without libdecor support need to
-be rebuilt; installing the runtime library alone does not enable that support.
+**Installation and first launch:** [macOS](docs/installation.md#macos-apple-silicon)
+· [Windows](docs/installation.md#windows-x64) · [Linux](docs/installation.md#linux-ubuntu-2404-x64).
+The guide also covers unsigned-app prompts on macOS and Windows.
 
 ## Using Frame Extractor
 
