@@ -58,10 +58,9 @@ use without requiring Python or command-line setup.
 
 The current test release is **v0.2.0-rc.3**:
 
-- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
-- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip.sha256)
-- **Ubuntu 24.04 x64** — [DEB installer (recommended)](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb.sha256)
-- **Ubuntu 24.04 x64 portable (optional)** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
+- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg)
+- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip)
+- **Linux x64** — [DEB](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb) · [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz)
 
 See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
 for all available versions.

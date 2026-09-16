@@ -2,7 +2,7 @@
 
 Download the package for your platform from
 [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases).
-The [README](../README.md#download) has direct download and SHA-256 links.
+The [README](../README.md#download) has direct download links.
 For unsigned test builds, approve an app-specific launch prompt only if you
 downloaded the app from this project and trust that build.
 
@@ -112,4 +112,4 @@ need a newer build as well. New builds also provide a **Quit** button and
 
 The **v0.2.0-rc.3** release includes both the recommended DEB installer and the
 optional portable archive with its desktop-registration helper. Use the direct
-[download and SHA-256 links in the README](../README.md#download).
+[download links in the README](../README.md#download).
