@@ -108,12 +108,8 @@ Restart the app afterwards. Older builds compiled without libdecor support
 need a newer build as well. New builds also provide a **Quit** button and
 **Ctrl+Q**, with confirmation when extraction is running.
 
-### Getting the newer Linux builds
+### Release downloads
 
-The published **v0.2.0-rc.2** release contains only the older portable archive;
-it does not include the DEB or the desktop-registration helper.
-Until a newer release is published, use the `frame-extractor-linux-x64` artifact
-from a successful [CI run](https://github.com/morishuz/adaptive-frame-extractor/actions/workflows/ci.yml)
-containing the Debian packaging changes. Extract the artifact ZIP to find the
-DEB, portable archive, and checksums. GitHub requires sign-in for artifact
-downloads; artifacts are retained for 14 days.
+The **v0.2.0-rc.3** release includes both the recommended DEB installer and the
+optional portable archive with its desktop-registration helper. Use the direct
+[download and SHA-256 links in the README](../README.md#download).

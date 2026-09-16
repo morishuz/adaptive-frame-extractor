@@ -56,17 +56,18 @@ use without requiring Python or command-line setup.
 
 ## Download
 
-The current test release is **v0.2.0-rc.2**:
+The current test release is **v0.2.0-rc.3**:
 
-- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
-- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-win64.zip.sha256)
-- **Ubuntu 24.04 x64** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.2/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
+- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg.sha256)
+- **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip.sha256)
+- **Ubuntu 24.04 x64** — [DEB installer (recommended)](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb.sha256)
+- **Ubuntu 24.04 x64 portable (optional)** — [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz) · [SHA-256](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz.sha256)
 
 See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
 for all available versions.
 
-Newer Linux builds add a **DEB installer** with automatic desktop integration;
-see the [installation guide](docs/installation.md) for availability and setup.
+The Linux **DEB installer** includes automatic desktop integration;
+see the [installation guide](docs/installation.md) for setup.
 
 **Installation and first launch:** [macOS](docs/installation.md#macos-apple-silicon)
 · [Windows](docs/installation.md#windows-x64) · [Linux](docs/installation.md#linux-ubuntu-2404-x64).
