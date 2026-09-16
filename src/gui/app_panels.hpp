@@ -15,6 +15,7 @@ enum class ControlAction {
   choose_output_directory,
   start_extraction,
   cancel_extraction,
+  quit,
   open_run_directory,
   open_summary,
 };

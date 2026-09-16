@@ -183,6 +183,15 @@ ControlSidebarResult drawControlSidebar(
     setAction(ControlAction::cancel_extraction);
   }
   ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Quit")) {
+    setAction(ControlAction::quit);
+  }
+#if defined(__APPLE__)
+  ImGui::SetItemTooltip("Quit (Cmd+Q)");
+#else
+  ImGui::SetItemTooltip("Quit (Ctrl+Q)");
+#endif
   if (!isTerminal(view.snapshot.phase)) {
     ImGui::TextWrapped(
         "%s",

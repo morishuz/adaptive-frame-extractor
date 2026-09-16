@@ -47,6 +47,22 @@ endforeach()
 set(CLI "${_package}/bin/frame-extractor${_suffix}")
 set(GUI "${_package}/bin/frame-extractor-gui${_suffix}")
 if(UNIX AND NOT APPLE)
+  foreach(resource
+      bin/install-desktop-integration.py
+      share/applications/io.github.morishuz.FrameExtractor.desktop
+      share/icons/hicolor/256x256/apps/io.github.morishuz.FrameExtractor.png)
+    if(NOT EXISTS "${_package}/${resource}")
+      message(FATAL_ERROR "Missing Linux desktop resource: ${resource}")
+    endif()
+  endforeach()
+  find_program(_python python3 REQUIRED)
+  find_program(_desktop_validate desktop-file-validate REQUIRED)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env "XDG_DATA_HOME=${_work}/desktop data"
+    "${_python}" "${_package}/bin/install-desktop-integration.py"
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${_desktop_validate}"
+    "${_work}/desktop data/applications/io.github.morishuz.FrameExtractor.desktop"
+    COMMAND_ERROR_IS_FATAL ANY)
   file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${CLI}" "${GUI}"
     RESOLVED_DEPENDENCIES_VAR _resolved UNRESOLVED_DEPENDENCIES_VAR _unresolved)
   if(_unresolved)

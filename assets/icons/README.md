@@ -25,3 +25,14 @@ python3 scripts/generate_windows_icon.py
 ```
 
 Commit both generated files alongside the updated source PNG.
+
+The portable PNG applies a rounded alpha mask matching the original pale tile,
+removing its white exterior without redrawing the artwork. The SDL icon loader
+preserves this transparency. The original PNG and Windows ICO remain unchanged.
+
+Linux also installs the PNG into the hicolor icon theme and a desktop entry
+named `io.github.morishuz.FrameExtractor.desktop`. SDL uses the same application
+identifier so Wayland docks can match the window to this launcher. Portable
+archive users run `python3 bin/install-desktop-integration.py` to register a
+launcher with absolute executable and icon paths in their user applications
+directory; see the main README for setup and removal.

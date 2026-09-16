@@ -9,7 +9,7 @@ The CI workflow builds and tests these packages:
 
 - macOS Apple Silicon DMG
 - Windows x64 ZIP
-- Ubuntu 24.04 x64 tar.gz
+- Ubuntu 24.04 x64 `.deb` installer and optional portable `.tar.gz`
 
 Packages from an ordinary CI run appear under **Actions → CI → Artifacts** and
 are retained for 14 days. Each platform uploads independently, so a failed run
@@ -18,6 +18,13 @@ may contain only the packages whose jobs completed successfully.
 CI checks the command-line application, bundled resources and runtime
 libraries, a real video extraction, and GUI startup/rendering. These automated
 checks do not replace hands-on testing on clean computers.
+
+Linux CI also installs the `.deb` using apt, checks its global launcher/icon,
+runs extraction and GUI startup through `/usr/bin`, and removes it again.
+The `.deb` keeps binaries, resources, and bundled libraries under
+`/opt/frame-extractor`, with launchers in `/usr/bin` and desktop integration in
+`/usr/share`. CPack's dependency scanner adds linked system libraries; SDL's
+dynamically loaded display and decoration libraries are declared explicitly.
 
 ## Tagged releases
 
@@ -66,6 +73,17 @@ SDL_VIDEO_DRIVER=x11 SDL_RENDER_DRIVER=software \
 ```
 
 ## Manual release checklist
+
+On Linux, the standalone vcpkg configuration produces both formats with:
+
+```sh
+cmake --build build/ci --target package
+```
+
+Building `.deb` files additionally requires `dpkg-dev`. Install and remove the
+Debian package on clean Ubuntu 24.04, confirming the menu and dock icon appear
+without running the portable registration helper. A previously registered
+per-user launcher must be removed before testing the system launcher.
 
 Test the packaged application on a clean machine without development libraries:
 

@@ -71,6 +71,53 @@ right-click the application and select **Open** the first time.
 macOS is currently the primary tested platform. Windows and Linux builds are
 also covered by automated tests.
 
+### Linux desktop setup
+
+For Ubuntu 24.04 x64, prefer the `.deb` from a build containing Debian packages.
+Install the downloaded file with apt (replace the filename with your download):
+
+```sh
+sudo apt install ./frame-extractor_0.2.0_amd64.deb
+```
+
+The package installs **Frame Extractor** in the applications menu with its icon
+and installs required system libraries automatically. No launcher script is
+needed. Use `sudo apt remove frame-extractor` to uninstall it.
+
+If you previously registered a portable/development build, remove its user
+launcher so it does not override the system-installed one:
+
+```sh
+rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/io.github.morishuz.FrameExtractor.desktop"
+```
+
+#### Optional portable archive
+
+Extract the archive into a folder you intend to keep. From that folder, register
+the launcher and dock icon for your user (requires Python 3, no sudo):
+
+```sh
+python3 bin/install-desktop-integration.py
+```
+
+Then launch **Frame Extractor** from the applications menu and pin that launcher
+to your dock. Remove any old generic pin first. If you move the extracted folder
+or install a new version elsewhere, rerun the script from the new folder.
+To remove the launcher, delete
+`${XDG_DATA_HOME:-$HOME/.local/share}/applications/io.github.morishuz.FrameExtractor.desktop`.
+
+On Ubuntu/GNOME Wayland, native title-bar controls require the system decoration
+library and plugin:
+
+```sh
+sudo apt install libdecor-0-0 libdecor-0-plugin-1-gtk
+```
+
+Restart the app after installing them. **Quit** in the Actions area and **Ctrl+Q**
+also close the app, with a confirmation if extraction is running. On macOS the
+shortcut is **Cmd+Q**. Older Linux builds made without libdecor support need to
+be rebuilt; installing the runtime library alone does not enable that support.
+
 ## Using Frame Extractor
 
 1. Drag a video into the application.

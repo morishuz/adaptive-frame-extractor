@@ -61,10 +61,12 @@ jobs:
           MACOS_DMG: ${{ needs.macos.outputs.dmg_name }}
           WINDOWS_ARCHIVE: ${{ needs.windows.outputs.archive_name }}
           LINUX_ARCHIVE: ${{ needs.linux.outputs.archive_name }}
+          LINUX_DEB: ${{ needs.linux.outputs.deb_name }}
         run: |
           sha256sum --check "$MACOS_DMG.sha256"
           sha256sum --check "$WINDOWS_ARCHIVE.sha256"
           sha256sum --check "$LINUX_ARCHIVE.sha256"
+          sha256sum --check "$LINUX_DEB.sha256"
           test -f "$MACOS_DMG"
       - name: Publish GitHub release assets
         working-directory: ${{ runner.temp }}/release-assets
@@ -74,6 +76,7 @@ jobs:
           MACOS_DMG: ${{ needs.macos.outputs.dmg_name }}
           WINDOWS_ARCHIVE: ${{ needs.windows.outputs.archive_name }}
           LINUX_ARCHIVE: ${{ needs.linux.outputs.archive_name }}
+          LINUX_DEB: ${{ needs.linux.outputs.deb_name }}
         run: |
           release_flags=()
           if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
@@ -83,6 +86,7 @@ jobs:
             "$MACOS_DMG" "$MACOS_DMG.sha256" \
             "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE.sha256" \
             "$LINUX_ARCHIVE" "$LINUX_ARCHIVE.sha256" \
+            "$LINUX_DEB" "$LINUX_DEB.sha256" \
             --verify-tag \
             --title "Frame Extractor $GITHUB_REF_NAME" \
             --generate-notes \

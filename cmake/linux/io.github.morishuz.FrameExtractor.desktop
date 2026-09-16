@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Frame Extractor
+Comment=Extract keyframes from video
+Exec=frame-extractor-gui %f
+Icon=io.github.morishuz.FrameExtractor
+Terminal=false
+Categories=AudioVideo;Video;
+StartupWMClass=io.github.morishuz.FrameExtractor

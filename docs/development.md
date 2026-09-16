@@ -197,7 +197,8 @@ sudo apt-get install -y build-essential cmake ninja-build git curl zip unzip \
   python3-jinja2 libx11-dev libxft-dev libxext-dev libxrandr-dev \
   libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev \
   libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev \
-  xvfb xauth patchelf
+  libdecor-0-dev libdecor-0-plugin-1-gtk \
+  xvfb xauth patchelf dpkg-dev desktop-file-utils
 ```
 
 vcpkg is not included in this repository. After installing the system packages

@@ -306,6 +306,14 @@ else()
       RUNTIME_DEPENDENCY_SET frame_extractor_runtime RUNTIME DESTINATION bin)
     install(FILES assets/fonts/InterVariable.ttf DESTINATION bin/fonts)
     install(FILES assets/icons/FrameExtractor.png DESTINATION bin/icons)
+    if(UNIX AND NOT APPLE)
+      install(FILES cmake/linux/io.github.morishuz.FrameExtractor.desktop
+        DESTINATION share/applications)
+      install(FILES assets/icons/FrameExtractor.png
+        DESTINATION share/icons/hicolor/256x256/apps
+        RENAME io.github.morishuz.FrameExtractor.png)
+      install(PROGRAMS scripts/install-desktop-integration.py DESTINATION bin)
+    endif()
     install(DIRECTORY configs/profiles/ DESTINATION bin/configs)
     install(FILES assets/fonts/Inter-LICENSE.txt DESTINATION share/frame-extractor/licenses)
     install(FILES "${frame_extractor_imgui_source_SOURCE_DIR}/LICENSE.txt"
@@ -336,6 +344,19 @@ elseif(APPLE AND FRAME_EXTRACTOR_BUILD_GUI)
 else()
   set(CPACK_GENERATOR "TGZ")
   set(CPACK_PACKAGE_FILE_NAME "frame-extractor-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND FRAME_EXTRACTOR_PACKAGE_STANDALONE)
+  set(CPACK_GENERATOR "TGZ;DEB")
+  set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux/CPackConfig.cmake")
+  set(CPACK_PRE_BUILD_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux/StageDeb.cmake")
+  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "M. Seeger")
+  set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/morishuz/adaptive-frame-extractor")
+  set(CPACK_DEBIAN_PACKAGE_SECTION "video")
+  set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+  # SDL loads these display libraries dynamically, so shlibdeps cannot see them.
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "libdecor-0-0, libdecor-0-plugin-1-gtk, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libegl1, libx11-6, libxext6, libxcursor1, libxi6, libxfixes3, libxrandr2, libxss1")
 endif()
 include(CPack)
 

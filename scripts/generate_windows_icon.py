@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 if __name__ == "__main__":
@@ -16,4 +16,14 @@ if __name__ == "__main__":
             icons / "FrameExtractor.ico",
             sizes=[(size, size) for size in (16, 24, 32, 48, 64, 128, 256)],
         )
+        # Match the existing rounded tile, removing only its white exterior.
+        # Draw at source resolution so downsampling antialiases the alpha edge.
+        scale = artwork.width / 256
+        mask = Image.new("L", artwork.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (10 * scale, 10 * scale, 245 * scale, 245 * scale),
+            radius=48 * scale,
+            fill=255,
+        )
+        artwork.putalpha(mask)
         artwork.resize((256, 256), Image.Resampling.LANCZOS).save(icons / "FrameExtractor.png")

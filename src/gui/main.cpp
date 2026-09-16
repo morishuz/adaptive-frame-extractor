@@ -126,6 +126,9 @@ int runApplication(int argc, char** argv) {
     return 2;
   }
 
+  // Keep the identifier in sync with the Linux desktop entry filename.
+  SDL_SetAppMetadata("Frame Extractor", fe::build::display.data(),
+      "io.github.morishuz.FrameExtractor");
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     std::cerr << "SDL initialization failed: " << SDL_GetError() << '\n';
     if (!smoke_test) {
@@ -173,9 +176,11 @@ int runApplication(int argc, char** argv) {
   SDL_SetRenderVSync(renderer, 1);
 #if !defined(__APPLE__)
   const auto icon_path = resource_directory / "icons/FrameExtractor.png";
-  const cv::Mat icon = cv::imread(icon_path.string(), cv::IMREAD_COLOR);
+  const cv::Mat icon = cv::imread(icon_path.string(), cv::IMREAD_UNCHANGED);
+  const auto icon_format = icon.channels() == 4
+      ? SDL_PIXELFORMAT_BGRA32 : SDL_PIXELFORMAT_BGR24;
   SDL_Surface* icon_surface = icon.empty() ? nullptr : SDL_CreateSurfaceFrom(
-      icon.cols, icon.rows, SDL_PIXELFORMAT_BGR24, icon.data, static_cast<int>(icon.step));
+      icon.cols, icon.rows, icon_format, icon.data, static_cast<int>(icon.step));
   const bool icon_loaded = icon_surface != nullptr && SDL_SetWindowIcon(window, icon_surface);
   SDL_DestroySurface(icon_surface);
   if (!icon_loaded && smoke_test) {
@@ -380,6 +385,16 @@ int runApplication(int argc, char** argv) {
       if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE
           && !event.key.repeat && gui::isActive(snapshot.phase)) {
         controller.cancel();
+      }
+      if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Q
+          && !event.key.repeat
+#if defined(__APPLE__)
+          && (event.key.mod & SDL_KMOD_GUI) != 0
+#else
+          && (event.key.mod & SDL_KMOD_CTRL) != 0
+#endif
+      ) {
+        close_requested = true;
       }
       if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
           && !gui::isActive(snapshot.phase)
@@ -592,6 +607,9 @@ int runApplication(int argc, char** argv) {
       }
       case gui::ControlAction::cancel_extraction:
         controller.cancel();
+        break;
+      case gui::ControlAction::quit:
+        close_requested = true;
         break;
       case gui::ControlAction::open_run_directory:
       case gui::ControlAction::open_summary: {
