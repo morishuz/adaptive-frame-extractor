@@ -9,7 +9,8 @@ The [README](../README.md#download) has direct download links.
 Requires **macOS 14 or newer**. The current macOS preview is Developer ID signed
 and notarized by Apple.
 
-With [Homebrew](https://brew.sh):
+With [Homebrew](https://brew.sh), first move any manually installed copy from
+Applications to the Trash, then run:
 
 ```sh
 brew install --cask morishuz/tap/frame-extractor
