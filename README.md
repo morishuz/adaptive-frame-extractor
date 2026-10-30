@@ -56,21 +56,21 @@ use without requiring Python or command-line setup.
 
 ## Download
 
-The current test release is **v0.2.0-rc.3**:
+**macOS — Apple Silicon, macOS 14 or newer:**
 
-- **macOS Apple Silicon** — [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/Frame-Extractor-0.2.0-macOS-arm64.dmg)
+```sh
+brew install --cask morishuz/tap/frame-extractor
+```
+
+Or download the [signed and notarized DMG (v0.2.0-rc.4)](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.4/Frame-Extractor-0.2.0-macOS-arm64.dmg)
+and drag **Frame Extractor.app** into **Applications**.
+
+**Windows and Linux — v0.2.0-rc.3:**
+
 - **Windows x64** — [ZIP](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-win64.zip)
 - **Linux x64** — [DEB](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor_0.2.0_amd64.deb) · [tar.gz](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.3/frame-extractor-0.2.0-Linux-x86_64.tar.gz)
 
-See [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
-for all available versions.
-
-The Linux **DEB installer** includes automatic desktop integration;
-see the [installation guide](docs/installation.md) for setup.
-
-**Installation and first launch:** [macOS](docs/installation.md#macos-apple-silicon)
-· [Windows](docs/installation.md#windows-x64) · [Linux](docs/installation.md#linux-ubuntu-2404-x64).
-The guide also covers unsigned-app prompts on macOS and Windows.
+[Installation instructions](docs/installation.md) · [All releases](https://github.com/morishuz/adaptive-frame-extractor/releases)
 
 ## Using Frame Extractor
 

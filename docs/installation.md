@@ -3,31 +3,31 @@
 Download the package for your platform from
 [GitHub Releases](https://github.com/morishuz/adaptive-frame-extractor/releases).
 The [README](../README.md#download) has direct download links.
-For unsigned test builds, approve an app-specific launch prompt only if you
-downloaded the app from this project and trust that build.
 
 ## macOS (Apple Silicon)
 
-1. Open the downloaded DMG.
-2. Drag **Frame Extractor.app** into **Applications**.
-3. Eject the DMG and open Frame Extractor from Applications.
+Requires **macOS 14 or newer**. The current macOS preview is Developer ID signed
+and notarized by Apple.
 
-### If macOS blocks the unsigned build
+With [Homebrew](https://brew.sh):
 
-If macOS says the developer cannot be verified or Apple cannot check the app:
+```sh
+brew install --cask morishuz/tap/frame-extractor
+```
 
-1. Try opening the app once, then dismiss the warning.
-2. Open **System Settings → Privacy & Security**.
-3. Find the notice for Frame Extractor and click **Open Anyway**.
-4. Authenticate if asked, then confirm **Open**.
+Or open the [DMG](https://github.com/morishuz/adaptive-frame-extractor/releases/download/v0.2.0-rc.4/Frame-Extractor-0.2.0-macOS-arm64.dmg),
+drag **Frame Extractor.app** into **Applications**, and eject the DMG.
+Open **Frame Extractor** from Applications.
 
-macOS saves this exception so you can open the app normally afterwards.
-See [Apple's instructions](https://support.apple.com/en-gb/102445).
-If the message instead says the app is damaged or will damage your computer,
-download a fresh copy and report the exact message rather than disabling
-Gatekeeper globally.
+To update a Homebrew installation:
 
-To uninstall, move Frame Extractor.app from Applications to the Trash.
+```sh
+brew update
+brew upgrade --cask morishuz/tap/frame-extractor
+```
+
+To uninstall, run `brew uninstall --cask morishuz/tap/frame-extractor`, or move
+a manually installed app from Applications to the Trash.
 
 ## Windows (x64)
 
