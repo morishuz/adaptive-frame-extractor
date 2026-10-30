@@ -38,8 +38,9 @@ Use a release candidate for hands-on testing on clean machines. Once the
 checklist below passes, create the final version tag from the exact tested
 commit; do not move or reuse a published tag.
 
-Without Apple credentials, the workflow creates an ad-hoc-signed test build.
-For public distribution, configure:
+Ordinary CI builds use an ad-hoc signature. Release builds require Developer ID
+signing and notarization and fail if any credentials are missing. Configure these
+repository secrets:
 
 - `MACOS_CERTIFICATE`
 - `MACOS_CERTIFICATE_PASSWORD`
@@ -49,7 +50,8 @@ For public distribution, configure:
 - `MACOS_NOTARY_PASSWORD`
 
 When all credentials are present, the workflow signs with the hardened runtime,
-notarizes the DMG, and staples the notarization ticket. Windows packages remain
+notarizes the DMG, staples and validates the notarization ticket, and checks
+Gatekeeper acceptance and the application team identity. Windows packages remain
 unsigned until a trusted code-signing certificate is configured; Linux archives
 do not use platform code signing.
 
@@ -104,3 +106,17 @@ bundled dependency licences described in
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). Windows installers,
 universal Linux packaging, and broad hardware/graphics validation remain
 separate release tasks.
+
+## Testing macOS signing without publishing
+
+Run **Actions → Package macOS → Run workflow**, leaving `sign` enabled. This
+builds only macOS, requires the signing secrets above, and uploads a verified
+DMG and SHA-256 checksum without creating a release. Test that DMG on a clean
+Mac before publishing. The current package supports Apple Silicon and macOS 14
+or newer.
+
+The existing `morishuz/homebrew-tap` can host a `frame-extractor` cask once the
+signed DMG is published. The cask must use that release's exact download URL
+and final SHA-256 checksum, require ARM64 and macOS Sonoma, and install
+`Frame Extractor.app`. Update its version and checksum for each release; do not
+point it at temporary Actions artifacts or an unsigned older release.

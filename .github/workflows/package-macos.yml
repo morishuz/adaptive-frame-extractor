@@ -1,10 +1,16 @@
 name: Package macOS
 
 on:
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: Require Developer ID signing and notarization
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       sign:
-        description: Use optional Apple signing and notarization credentials
+        description: Require Developer ID signing and notarization
         type: boolean
         default: false
     secrets:
@@ -64,26 +70,37 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg-cache.outputs.toolchain_key }}-
 
-      - name: Prepare optional Apple signing certificate
+      - name: Prepare Apple signing certificate
         id: signing
         env:
           ENABLE_APPLE_SIGNING: ${{ inputs.sign }}
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
         run: |
-          if [ "$ENABLE_APPLE_SIGNING" != true ] || [ -z "$MACOS_CERTIFICATE" ]; then
+          if [ "$ENABLE_APPLE_SIGNING" != true ]; then
             echo "identity=-" >> "$GITHUB_OUTPUT"
             echo "Using an ad-hoc signature for this package."
             exit 0
           fi
-          if [ -z "$MACOS_CERTIFICATE_PASSWORD" ] || [ -z "$MACOS_CODESIGN_IDENTITY" ]; then
-            echo "Certificate, password, and signing identity must all be configured." >&2
-            exit 1
-          fi
+          for variable in MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD MACOS_CODESIGN_IDENTITY \
+            MACOS_NOTARY_APPLE_ID MACOS_NOTARY_TEAM_ID MACOS_NOTARY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "Required signing secret is missing: $variable" >&2
+              exit 1
+            fi
+          done
+          case "$MACOS_CODESIGN_IDENTITY" in
+            "Developer ID Application:"*) ;;
+            *) echo "A Developer ID Application identity is required." >&2; exit 1 ;;
+          esac
+          umask 077
           certificate_path="$RUNNER_TEMP/frame-extractor-certificate.p12"
           keychain_path="$RUNNER_TEMP/frame-extractor-signing.keychain-db"
-          keychain_password="frame-extractor-$GITHUB_RUN_ID"
+          keychain_password=$(openssl rand -hex 32)
           printf '%s' "$MACOS_CERTIFICATE" | base64 -D > "$certificate_path"
           security create-keychain -p "$keychain_password" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
@@ -175,21 +192,22 @@ jobs:
           MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
         run: |
           dmg="build/package/${{ steps.package.outputs.dmg_name }}"
-          if [ "$MACOS_CODESIGN_IDENTITY" = "-" ]; then
-            echo "Skipping notarization for the ad-hoc-signed build."
-            exit 0
-          fi
           codesign --force --sign "$MACOS_CODESIGN_IDENTITY" --timestamp "$dmg"
-          if [ -z "$MACOS_NOTARY_APPLE_ID" ] || [ -z "$MACOS_NOTARY_TEAM_ID" ] \
-            || [ -z "$MACOS_NOTARY_PASSWORD" ]; then
-            echo "Notary credentials are incomplete; the signed DMG was not notarized."
-            exit 0
-          fi
           xcrun notarytool submit "$dmg" --wait \
             --apple-id "$MACOS_NOTARY_APPLE_ID" \
             --team-id "$MACOS_NOTARY_TEAM_ID" \
             --password "$MACOS_NOTARY_PASSWORD"
           xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+          mount_point=$(mktemp -d "$RUNNER_TEMP/frame-extractor-signed.XXXXXX")
+          trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true; rmdir "$mount_point"' EXIT
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point"
+          app="$mount_point/Frame Extractor.app"
+          codesign --verify --deep --strict "$app"
+          actual_team=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          test "$actual_team" = "$MACOS_NOTARY_TEAM_ID"
+          spctl --assess --type execute --verbose=2 "$app"
 
       - name: Create checksum
         working-directory: build/package
@@ -214,3 +232,4 @@ jobs:
           if [ -e "$keychain_path" ]; then
             security delete-keychain "$keychain_path"
           fi
+          rm -f "$RUNNER_TEMP/frame-extractor-certificate.p12"
