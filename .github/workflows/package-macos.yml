@@ -7,6 +7,10 @@ on:
         description: Require Developer ID signing and notarization
         type: boolean
         default: true
+      release_tag:
+        description: Optional new preview tag to publish after verification (e.g. v0.2.0-rc.4)
+        type: string
+        default: ''
   workflow_call:
     inputs:
       sign:
@@ -52,6 +56,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: Validate preview publication request
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SIGN: ${{ inputs.sign }}
+        run: |
+          test "$SIGN" = true
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
 
       - name: Prepare vcpkg binary cache
         id: vcpkg-cache
@@ -233,3 +246,29 @@ jobs:
             security delete-keychain "$keychain_path"
           fi
           rm -f "$RUNNER_TEMP/frame-extractor-certificate.p12"
+
+  publish-preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.sign && inputs.release_tag != ''
+    needs: macos-arm64
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      VERSION: ${{ needs.macos-arm64.outputs.version }}
+      DMG: ${{ needs.macos-arm64.outputs.dmg_name }}
+      ARTIFACT: ${{ needs.macos-arm64.outputs.artifact_name }}
+    steps:
+      - name: Publish verified macOS preview
+        run: |
+          [[ "$RELEASE_TAG" == "v$VERSION-rc."* ]]
+          gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT" --dir release
+          cd release
+          sha256sum --check "$DMG.sha256"
+          gh release create "$RELEASE_TAG" "$DMG" "$DMG.sha256" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Frame Extractor $RELEASE_TAG — signed macOS preview" \
+            --notes "Apple Silicon, macOS 14 or newer. Developer ID signed and notarized by Apple, with a stapled notarization ticket. This preview contains only the macOS package; Windows and Linux downloads remain available in v0.2.0-rc.3."

@@ -120,3 +120,10 @@ signed DMG is published. The cask must use that release's exact download URL
 and final SHA-256 checksum, require ARM64 and macOS Sonoma, and install
 `Frame Extractor.app`. Update its version and checksum for each release; do not
 point it at temporary Actions artifacts or an unsigned older release.
+
+To publish a macOS-only preview, supply a new `release_tag` such as
+`v0.2.0-rc.4` in that manual run. Signing must be enabled. The workflow publishes
+only after all package and notarization checks succeed, and checks that the tag
+matches the app version. It uses the workflow token to create the release/tag,
+so this does not trigger the separate three-platform tag workflow. Leave the
+tag empty for validation runs. Existing release assets are never overwritten.
