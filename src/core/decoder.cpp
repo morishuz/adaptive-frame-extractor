@@ -15,6 +15,11 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 #include <libavutil/mathematics.h>
 #include <libswscale/swscale.h>
+#if defined(FRAME_EXTRACTOR_HAVE_AVFILTER)
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
+#endif
 }
 
 #include <algorithm>
@@ -327,14 +332,34 @@ std::shared_ptr<AVFrame> cloneFrame(const AVFrame& frame) {
   return std::shared_ptr<AVFrame>{cloned, [](AVFrame* value) { av_frame_free(&value); }};
 }
 
+// Retained frames may still live in GPU memory (when analysis was downscaled
+// on the GPU). Copy them to system memory only when a full image is needed.
+std::shared_ptr<AVFrame> softwareFrame(const std::shared_ptr<AVFrame>& frame) {
+  if (frame->hw_frames_ctx == nullptr) {
+    return frame;
+  }
+  AVFrame* downloaded = av_frame_alloc();
+  if (downloaded == nullptr) {
+    throw std::bad_alloc{};
+  }
+  std::shared_ptr<AVFrame> result{
+      downloaded, [](AVFrame* value) { av_frame_free(&value); }};
+  if (av_hwframe_transfer_data(downloaded, frame.get(), 0) < 0
+      || av_frame_copy_props(downloaded, frame.get()) < 0) {
+    throw std::runtime_error("Cannot transfer retained hardware video frame");
+  }
+  return result;
+}
+
 std::function<cv::Mat()> fullBgrRenderer(
     std::shared_ptr<AVFrame> frame,
     int rotation_degrees) {
   return [frame = std::move(frame), rotation_degrees] {
+    const auto source = softwareFrame(frame);
     return applyDisplayRotation(
         convertToBgrOnce(
-            *frame,
-            cv::Size{frame->width, frame->height},
+            *source,
+            cv::Size{source->width, source->height},
             SWS_BILINEAR),
         rotation_degrees);
   };
@@ -373,7 +398,7 @@ std::function<cv::Mat(int, int)> previewBgrRenderer(
     }
 
     return applyDisplayRotation(
-        convertToBgrOnce(*frame, destination_size, SWS_AREA),
+        convertToBgrOnce(*softwareFrame(frame), destination_size, SWS_AREA),
         rotation_degrees);
   };
 }
@@ -587,8 +612,19 @@ class VideoDecoder::Impl {
         const AVFrame* decoded_frame = frame_;
         double hardware_transfer_seconds = 0.0;
         if (hardware_frame) {
-          av_frame_unref(software_frame_);
           const auto transfer_started = Clock::now();
+          if (const AVFrame* scaled = gpuDownscale(); scaled != nullptr) {
+            // Only the small analysis image crossed to system memory; the
+            // full-resolution frame stays on the GPU until a keyframe needs it.
+            hardware_transfer_seconds = elapsedSeconds(transfer_started);
+            return convertFrame(
+                *scaled,
+                *frame_,
+                cloneFrame(*frame_),
+                packet_decode_seconds,
+                hardware_transfer_seconds);
+          }
+          av_frame_unref(software_frame_);
           checkAv(
               av_hwframe_transfer_data(software_frame_, frame_, 0),
               "Cannot transfer hardware-decoded video frame");
@@ -599,7 +635,11 @@ class VideoDecoder::Impl {
           decoded_frame = software_frame_;
         }
         return convertFrame(
-            *decoded_frame, packet_decode_seconds, hardware_transfer_seconds);
+            *decoded_frame,
+            *decoded_frame,
+            nullptr,
+            packet_decode_seconds,
+            hardware_transfer_seconds);
       }
       if (receive_result == AVERROR_EOF) {
         return std::nullopt;
@@ -713,10 +753,171 @@ class VideoDecoder::Impl {
 #endif
   }
 
+  // Downscales frame_ (a hardware frame) on the GPU and returns the
+  // analysis-size frame in system memory. Returns nullptr when GPU scaling is
+  // unavailable, so the caller falls back to a full-resolution transfer.
+  const AVFrame* gpuDownscale() {
+#if defined(FRAME_EXTRACTOR_HAVE_AVFILTER)
+    if (gpu_scale_disabled_ || !analysis_frame_size_ || !defer_full_bgr_
+        || frame_->format != AV_PIX_FMT_CUDA || frame_->hw_frames_ctx == nullptr) {
+      return nullptr;
+    }
+    if (filter_graph_ == nullptr
+        || filter_frames_ctx_ != frame_->hw_frames_ctx->data
+        || filter_input_size_ != cv::Size{frame_->width, frame_->height}) {
+      if (!buildGpuScaleGraph()) {
+        gpu_scale_disabled_ = true;
+        return nullptr;
+      }
+    }
+    av_frame_unref(gpu_scaled_frame_);
+    if (av_buffersrc_add_frame_flags(
+            buffersrc_, frame_, AV_BUFFERSRC_FLAG_KEEP_REF) < 0
+        || av_buffersink_get_frame(buffersink_, gpu_scaled_frame_) < 0) {
+      // A failure after the graph was built is unexpected; drop to the
+      // transfer path for the rest of the video rather than risk drift.
+      freeFilterGraph();
+      gpu_scale_disabled_ = true;
+      return nullptr;
+    }
+    return gpu_scaled_frame_;
+#else
+    return nullptr;
+#endif
+  }
+
+#if defined(FRAME_EXTRACTOR_HAVE_AVFILTER)
+  bool buildGpuScaleGraph() {
+    freeFilterGraph();
+    if (environmentFlagSet("FRAME_EXTRACTOR_DISABLE_GPU_SCALE")) {
+      return false;
+    }
+    const auto* frames_context =
+        reinterpret_cast<const AVHWFramesContext*>(frame_->hw_frames_ctx->data);
+    const char* software_format = av_get_pix_fmt_name(frames_context->sw_format);
+    const AVPixFmtDescriptor* software_descriptor =
+        av_pix_fmt_desc_get(frames_context->sw_format);
+    if (software_format == nullptr || software_descriptor == nullptr) {
+      return false;
+    }
+
+    cv::Size target = *analysis_frame_size_;
+    if (info_.rotation_degrees == 90 || info_.rotation_degrees == 270) {
+      std::swap(target.width, target.height);
+    }
+    // Use the GPU only when its output is byte-identical to the CPU resize
+    // (see exactGpuHalvings); any other size or format keeps the
+    // full-resolution transfer so results never depend on the build.
+    const auto stages = detail::exactGpuHalvings(
+        {frame_->width, frame_->height}, target, software_descriptor->comp[0].shift);
+    if (!stages) {
+      return false;
+    }
+    std::string description;
+    cv::Size current{frame_->width, frame_->height};
+    for (int stage = 0; stage < *stages; ++stage) {
+      current = {current.width / 2, current.height / 2};
+      description += "scale_cuda=w=" + std::to_string(current.width)
+          + ":h=" + std::to_string(current.height) + ":interp_algo=bilinear,";
+    }
+    description += "hwdownload,format=";
+    description += software_format;
+
+    filter_graph_ = avfilter_graph_alloc();
+    if (filter_graph_ == nullptr) {
+      return false;
+    }
+    // scale_cuda runs on the GPU; skip lavfi's CPU slice-thread pool.
+    filter_graph_->nb_threads = 1;
+    const AVFilter* source_filter = avfilter_get_by_name("buffer");
+    const AVFilter* sink_filter = avfilter_get_by_name("buffersink");
+    if (source_filter == nullptr || sink_filter == nullptr
+        || avfilter_get_by_name("scale_cuda") == nullptr) {
+      freeFilterGraph();
+      return false;
+    }
+    buffersrc_ = avfilter_graph_alloc_filter(filter_graph_, source_filter, "in");
+    AVBufferSrcParameters* parameters = av_buffersrc_parameters_alloc();
+    if (buffersrc_ == nullptr || parameters == nullptr) {
+      av_free(parameters);
+      freeFilterGraph();
+      return false;
+    }
+    parameters->format = frame_->format;
+    parameters->width = frame_->width;
+    parameters->height = frame_->height;
+    parameters->time_base = stream_->time_base;
+    parameters->sample_aspect_ratio = frame_->sample_aspect_ratio.num > 0
+        ? frame_->sample_aspect_ratio
+        : AVRational{1, 1};
+    parameters->hw_frames_ctx = frame_->hw_frames_ctx;
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(9, 16, 100)
+    parameters->color_space = frame_->colorspace;
+    parameters->color_range = frame_->color_range;
+#endif
+    const int parameters_result = av_buffersrc_parameters_set(buffersrc_, parameters);
+    av_free(parameters);
+    if (parameters_result < 0 || avfilter_init_str(buffersrc_, nullptr) < 0
+        || avfilter_graph_create_filter(
+               &buffersink_, sink_filter, "out", nullptr, nullptr, filter_graph_) < 0) {
+      freeFilterGraph();
+      return false;
+    }
+
+    AVFilterInOut* outputs = avfilter_inout_alloc();
+    AVFilterInOut* inputs = avfilter_inout_alloc();
+    bool configured = false;
+    if (outputs != nullptr && inputs != nullptr) {
+      outputs->name = av_strdup("in");
+      outputs->filter_ctx = buffersrc_;
+      outputs->pad_idx = 0;
+      outputs->next = nullptr;
+      inputs->name = av_strdup("out");
+      inputs->filter_ctx = buffersink_;
+      inputs->pad_idx = 0;
+      inputs->next = nullptr;
+      configured = outputs->name != nullptr && inputs->name != nullptr
+          && avfilter_graph_parse_ptr(
+                       filter_graph_, description.c_str(), &inputs, &outputs, nullptr) >= 0
+          && avfilter_graph_config(filter_graph_, nullptr) >= 0;
+    }
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+    if (!configured) {
+      freeFilterGraph();
+      return false;
+    }
+    if (gpu_scaled_frame_ == nullptr) {
+      gpu_scaled_frame_ = av_frame_alloc();
+      if (gpu_scaled_frame_ == nullptr) {
+        freeFilterGraph();
+        return false;
+      }
+    }
+    filter_frames_ctx_ = frame_->hw_frames_ctx->data;
+    filter_input_size_ = {frame_->width, frame_->height};
+    return true;
+  }
+
+  void freeFilterGraph() noexcept {
+    avfilter_graph_free(&filter_graph_);
+    buffersrc_ = nullptr;
+    buffersink_ = nullptr;
+    filter_frames_ctx_ = nullptr;
+  }
+#endif
+
+  // analysis_source holds the pixels used for the analysis image (it may be a
+  // GPU-downscaled copy); timing_source supplies timestamps; retained, when
+  // set, is the full-resolution frame kept for on-demand BGR rendering.
   DecodedFrame convertFrame(
-      const AVFrame& frame,
+      const AVFrame& analysis_source,
+      const AVFrame& timing_source,
+      std::shared_ptr<AVFrame> retained,
       double packet_decode_seconds,
       double hardware_transfer_seconds) {
+    const AVFrame& frame = analysis_source;
+    const bool prescaled = retained != nullptr;
     cv::Size destination_size{frame.width, frame.height};
     if (analysis_frame_size_) {
       destination_size = *analysis_frame_size_;
@@ -736,7 +937,9 @@ class VideoDecoder::Impl {
           static_cast<std::int64_t>(frame.width) * frame.height
           > static_cast<std::int64_t>(destination_size.width)
               * destination_size.height;
-      auto native = downsampling
+      // A GPU-prescaled frame already has the analysis size; its luma plane
+      // is used as-is (cv::resize at equal size is a copy).
+      auto native = downsampling || prescaled
           ? convertNativeLumaWithOpenCv(frame, destination_size)
           : std::nullopt;
       if (native) {
@@ -768,13 +971,13 @@ class VideoDecoder::Impl {
       bgr = std::move(converted);
     }
     if (defer_full_bgr_) {
-      auto retained_frame = cloneFrame(frame);
+      auto retained_frame = retained ? std::move(retained) : cloneFrame(frame);
       render_bgr = fullBgrRenderer(retained_frame, info_.rotation_degrees);
       render_preview_bgr = previewBgrRenderer(
           std::move(retained_frame), info_.rotation_degrees);
     }
 
-    const std::int64_t raw_pts = frame.best_effort_timestamp;
+    const std::int64_t raw_pts = timing_source.best_effort_timestamp;
     const auto pts = raw_pts == AV_NOPTS_VALUE
         ? std::optional<std::int64_t>{}
         : std::optional<std::int64_t>{raw_pts};
@@ -796,6 +999,10 @@ class VideoDecoder::Impl {
   }
 
   void cleanup() noexcept {
+#if defined(FRAME_EXTRACTOR_HAVE_AVFILTER)
+    freeFilterGraph();
+    av_frame_free(&gpu_scaled_frame_);
+#endif
     sws_freeContext(sws_);
     sws_ = nullptr;
     av_frame_free(&frame_);
@@ -821,6 +1028,15 @@ class VideoDecoder::Impl {
   bool input_eof_{false};
   bool flush_sent_{false};
   bool random_access_mode_{false};
+#if defined(FRAME_EXTRACTOR_HAVE_AVFILTER)
+  AVFilterGraph* filter_graph_{nullptr};
+  AVFilterContext* buffersrc_{nullptr};
+  AVFilterContext* buffersink_{nullptr};
+  const void* filter_frames_ctx_{nullptr};
+  cv::Size filter_input_size_{};
+  AVFrame* gpu_scaled_frame_{nullptr};
+  bool gpu_scale_disabled_{false};
+#endif
 };
 
 double Rational::toSeconds(std::int64_t value) const {

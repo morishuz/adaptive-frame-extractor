@@ -33,6 +33,20 @@ TEST_CASE("near-CFR metadata permits stable frame indices after seeking") {
       {5999, 100}, {60, 1}, 359940, 6000.0));
 }
 
+TEST_CASE("GPU halving plan only accepts reductions that match the CPU resize") {
+  using fe::detail::exactGpuHalvings;
+  // P010 (6 padding bits): two halvings stay exact.
+  CHECK(exactGpuHalvings({3840, 2160}, {960, 540}, 6) == 2);
+  // 8-bit: one halving is exact, two are not.
+  CHECK(exactGpuHalvings({1920, 1080}, {960, 540}, 0) == 1);
+  CHECK_FALSE(exactGpuHalvings({3840, 2160}, {960, 540}, 0));
+  // Four halvings exceed what 6 padding bits can absorb.
+  CHECK_FALSE(exactGpuHalvings({7680, 4320}, {480, 270}, 6));
+  // Not a power-of-two ratio, or nothing to do.
+  CHECK_FALSE(exactGpuHalvings({2560, 1440}, {960, 540}, 6));
+  CHECK_FALSE(exactGpuHalvings({960, 540}, {960, 540}, 6));
+}
+
 namespace {
 
 class CancellingObserver final : public fe::DiagnosticObserver {
