@@ -180,28 +180,33 @@ ProcessingResult processFrames(
       totalFrames(source.info(), normalized_options)});
   std::optional<std::int64_t> previous_pts;
 
+  // Shared by analyzed and skipped frames so every frame counted in
+  // source_frames_read is also counted by its conversion method.
+  const auto accumulateDecodeTimings = [&](const FrameDecodeTimings& timings) {
+    ++result.timings.source_frames_read;
+    result.timings.packet_decode_seconds += timings.packet_decode_seconds;
+    result.timings.hardware_transfer_seconds += timings.hardware_transfer_seconds;
+    result.timings.pixel_conversion_seconds += timings.pixel_conversion_seconds;
+    result.timings.rotation_seconds += timings.rotation_seconds;
+    switch (timings.analysis_conversion_method) {
+      case AnalysisConversionMethod::none:
+        break;
+      case AnalysisConversionMethod::opencv_native_luma:
+        ++result.timings.analysis_native_luma_frames;
+        break;
+      case AnalysisConversionMethod::ffmpeg_fallback:
+        ++result.timings.analysis_ffmpeg_fallback_frames;
+        break;
+    }
+  };
+
   const auto readFrame = [&] {
     const auto started = Clock::now();
     auto frame = source.read();
     const double source_read_seconds = elapsedSeconds(started);
     result.timings.source_read_seconds += source_read_seconds;
     if (frame) {
-      ++result.timings.source_frames_read;
-      result.timings.packet_decode_seconds += frame->timings.packet_decode_seconds;
-      result.timings.hardware_transfer_seconds +=
-          frame->timings.hardware_transfer_seconds;
-      result.timings.pixel_conversion_seconds += frame->timings.pixel_conversion_seconds;
-      result.timings.rotation_seconds += frame->timings.rotation_seconds;
-      switch (frame->timings.analysis_conversion_method) {
-        case AnalysisConversionMethod::none:
-          break;
-        case AnalysisConversionMethod::opencv_native_luma:
-          ++result.timings.analysis_native_luma_frames;
-          break;
-        case AnalysisConversionMethod::ffmpeg_fallback:
-          ++result.timings.analysis_ffmpeg_fallback_frames;
-          break;
-      }
+      accumulateDecodeTimings(frame->timings);
     }
     return std::pair{std::move(frame), source_read_seconds};
   };
@@ -212,9 +217,13 @@ ProcessingResult processFrames(
       emit(observer, RunFinishedEvent{0, 0, true});
       return result;
     }
-    if (!readFrame().first) {
+    const auto started = Clock::now();
+    const auto skipped_timings = source.skip();
+    result.timings.source_read_seconds += elapsedSeconds(started);
+    if (!skipped_timings) {
       throw std::runtime_error("start_frame is beyond the end of the video");
     }
+    accumulateDecodeTimings(*skipped_timings);
   }
 
   struct SegmentState {

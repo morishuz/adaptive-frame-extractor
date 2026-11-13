@@ -75,6 +75,15 @@ class FrameSource {
   virtual ~FrameSource() = default;
   [[nodiscard]] virtual const VideoInfo& info() const = 0;
   [[nodiscard]] virtual std::optional<DecodedFrame> read() = 0;
+  // Advances past one frame that the caller will discard. Decoders can skip
+  // GPU-to-RAM transfer and pixel conversion; the default simply reads.
+  [[nodiscard]] virtual std::optional<FrameDecodeTimings> skip() {
+    auto frame = read();
+    if (!frame) {
+      return std::nullopt;
+    }
+    return frame->timings;
+  }
   virtual bool seekToSeconds(double seconds) {
     (void)seconds;
     return false;
@@ -100,6 +109,7 @@ class VideoDecoder final : public FrameSource {
 
   [[nodiscard]] const VideoInfo& info() const override;
   [[nodiscard]] std::optional<DecodedFrame> read() override;
+  [[nodiscard]] std::optional<FrameDecodeTimings> skip() override;
   bool seekToSeconds(double seconds) override;
 
  private:

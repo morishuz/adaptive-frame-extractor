@@ -22,6 +22,7 @@ extern "C" {
 #include <chrono>
 #include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -42,6 +43,24 @@ std::string utf8Path(const std::filesystem::path& path) {
     return {};
   }
   return {reinterpret_cast<const char*>(encoded.data()), encoded.size()};
+}
+
+// True when the environment variable is set to anything other than empty or
+// "0". _dupenv_s avoids MSVC's C4996 deprecation warning for std::getenv.
+bool environmentFlagSet(const char* name) {
+#if defined(_MSC_VER)
+  char* value = nullptr;
+  std::size_t length = 0;
+  if (_dupenv_s(&value, &length, name) != 0 || value == nullptr) {
+    return false;
+  }
+  const bool set = value[0] != '\0' && value[0] != '0';
+  std::free(value);
+  return set;
+#else
+  const char* value = std::getenv(name);
+  return value != nullptr && value[0] != '\0' && value[0] != '0';
+#endif
 }
 
 struct SourcePixelFormat {
@@ -531,16 +550,43 @@ class VideoDecoder::Impl {
     return true;
   }
 
-  std::optional<DecodedFrame> read() {
+  std::optional<DecodedFrame> read() { return receive(false); }
+
+  std::optional<FrameDecodeTimings> skip() {
+    auto frame = receive(true);
+    if (!frame) {
+      return std::nullopt;
+    }
+    return frame->timings;
+  }
+
+ private:
+  std::optional<DecodedFrame> receive(bool discard) {
     const auto read_started = Clock::now();
     while (true) {
       const int receive_result = avcodec_receive_frame(codec_, frame_);
       if (receive_result == 0) {
         const double packet_decode_seconds = elapsedSeconds(read_started);
+        const bool hardware_frame = frame_->format == hardware_pixel_format_;
+        if (hardware_frame) {
+          info_.hardware_accelerated_decode = true;
+        }
+        if (discard) {
+          // Keep frame numbering in step without touching pixel data, so a
+          // hardware frame never leaves the GPU.
+          DecodedFrame skipped{};
+          const std::int64_t raw_pts = frame_->best_effort_timestamp;
+          if (raw_pts != AV_NOPTS_VALUE) {
+            skipped.pts = raw_pts;
+          }
+          skipped.decoded_frame_index = nextDecodedIndex(skipped.pts);
+          skipped.time_base = info_.time_base;
+          skipped.timings.packet_decode_seconds = packet_decode_seconds;
+          return skipped;
+        }
         const AVFrame* decoded_frame = frame_;
         double hardware_transfer_seconds = 0.0;
-        if (frame_->format == hardware_pixel_format_) {
-          info_.hardware_accelerated_decode = true;
+        if (hardware_frame) {
           av_frame_unref(software_frame_);
           const auto transfer_started = Clock::now();
           checkAv(
@@ -594,38 +640,73 @@ class VideoDecoder::Impl {
     }
   }
 
- private:
+  std::int64_t nextDecodedIndex(const std::optional<std::int64_t>& pts) {
+    std::int64_t decoded_index = next_decoded_index_++;
+    const auto fps = info_.framesPerSecond();
+    if (random_access_mode_ && pts && fps) {
+      const std::int64_t origin = stream_->start_time == AV_NOPTS_VALUE
+          ? 0
+          : stream_->start_time;
+      const double seconds = info_.time_base.toSeconds(*pts - origin);
+      decoded_index = std::max<std::int64_t>(
+          0,
+          static_cast<std::int64_t>(
+              std::llround(seconds * *fps)));
+      next_decoded_index_ = decoded_index + 1;
+    }
+    return decoded_index;
+  }
+
   void configureHardwareDecode(const AVCodec* codec) {
+#if defined(__APPLE__) || defined(_WIN32) || defined(__linux__)
+    // Device types to try, most preferred first. On Windows, D3D11VA works on
+    // any vendor's GPU and is built into FFmpeg without extra SDKs; DXVA2 is
+    // the older fallback. On Linux, CUDA (NVDEC) covers NVIDIA GPUs and VAAPI
+    // covers Intel/AMD. Each failed device creation moves on to the next.
 #if defined(__APPLE__)
+    constexpr AVHWDeviceType preferred_devices[] = {
+        AV_HWDEVICE_TYPE_VIDEOTOOLBOX};
+#elif defined(_WIN32)
+    constexpr AVHWDeviceType preferred_devices[] = {
+        AV_HWDEVICE_TYPE_D3D11VA, AV_HWDEVICE_TYPE_DXVA2};
+#else
+    constexpr AVHWDeviceType preferred_devices[] = {
+        AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_VAAPI};
+#endif
+    if (environmentFlagSet("FRAME_EXTRACTOR_DISABLE_HWDEC")) {
+      return;
+    }
     constexpr std::int64_t minimum_hardware_decode_area = 1920LL * 1080LL;
     if (static_cast<std::int64_t>(codec_->width) * codec_->height
         < minimum_hardware_decode_area) {
       return;
     }
-    for (int index = 0;; ++index) {
-      const AVCodecHWConfig* config = avcodec_get_hw_config(codec, index);
-      if (config == nullptr) {
+    for (const AVHWDeviceType device_type : preferred_devices) {
+      for (int index = 0;; ++index) {
+        const AVCodecHWConfig* config = avcodec_get_hw_config(codec, index);
+        if (config == nullptr) {
+          break;
+        }
+        if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) == 0
+            || config->device_type != device_type) {
+          continue;
+        }
+        AVBufferRef* device = nullptr;
+        if (av_hwdevice_ctx_create(
+                &device, config->device_type, nullptr, nullptr, 0) < 0) {
+          break;
+        }
+        AVBufferRef* device_reference = av_buffer_ref(device);
+        av_buffer_unref(&device);
+        if (device_reference == nullptr) {
+          return;
+        }
+        hardware_pixel_format_ = config->pix_fmt;
+        codec_->opaque = &hardware_pixel_format_;
+        codec_->get_format = selectHardwarePixelFormat;
+        codec_->hw_device_ctx = device_reference;
         return;
       }
-      if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) == 0
-          || config->device_type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
-        continue;
-      }
-      AVBufferRef* device = nullptr;
-      if (av_hwdevice_ctx_create(
-              &device, config->device_type, nullptr, nullptr, 0) < 0) {
-        return;
-      }
-      AVBufferRef* device_reference = av_buffer_ref(device);
-      av_buffer_unref(&device);
-      if (device_reference == nullptr) {
-        return;
-      }
-      hardware_pixel_format_ = config->pix_fmt;
-      codec_->opaque = &hardware_pixel_format_;
-      codec_->get_format = selectHardwarePixelFormat;
-      codec_->hw_device_ctx = device_reference;
-      return;
     }
 #else
     (void)codec;
@@ -697,19 +778,7 @@ class VideoDecoder::Impl {
     const auto pts = raw_pts == AV_NOPTS_VALUE
         ? std::optional<std::int64_t>{}
         : std::optional<std::int64_t>{raw_pts};
-    std::int64_t decoded_index = next_decoded_index_++;
-    const auto fps = info_.framesPerSecond();
-    if (random_access_mode_ && pts && fps) {
-      const std::int64_t origin = stream_->start_time == AV_NOPTS_VALUE
-          ? 0
-          : stream_->start_time;
-      const double seconds = info_.time_base.toSeconds(*pts - origin);
-      decoded_index = std::max<std::int64_t>(
-          0,
-          static_cast<std::int64_t>(
-              std::llround(seconds * *fps)));
-      next_decoded_index_ = decoded_index + 1;
-    }
+    const std::int64_t decoded_index = nextDecodedIndex(pts);
     return DecodedFrame{
         std::move(bgr),
         decoded_index,
@@ -832,6 +901,7 @@ VideoDecoder& VideoDecoder::operator=(VideoDecoder&&) noexcept = default;
 
 const VideoInfo& VideoDecoder::info() const { return impl_->info(); }
 std::optional<DecodedFrame> VideoDecoder::read() { return impl_->read(); }
+std::optional<FrameDecodeTimings> VideoDecoder::skip() { return impl_->skip(); }
 bool VideoDecoder::seekToSeconds(double seconds) {
   return impl_->seekToSeconds(seconds);
 }
