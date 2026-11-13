@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -32,6 +33,20 @@ TEST_CASE("near-CFR metadata permits stable frame indices after seeking") {
       {5999, 100}, {60, 1}, 359940, 6000.0));
 }
 
+TEST_CASE("GPU halving plan only accepts reductions that match the CPU resize") {
+  using fe::detail::exactGpuHalvings;
+  // P010 (6 padding bits): two halvings stay exact.
+  CHECK(exactGpuHalvings({3840, 2160}, {960, 540}, 6) == 2);
+  // 8-bit: one halving is exact, two are not.
+  CHECK(exactGpuHalvings({1920, 1080}, {960, 540}, 0) == 1);
+  CHECK_FALSE(exactGpuHalvings({3840, 2160}, {960, 540}, 0));
+  // Four halvings exceed what 6 padding bits can absorb.
+  CHECK_FALSE(exactGpuHalvings({7680, 4320}, {480, 270}, 6));
+  // Not a power-of-two ratio, or nothing to do.
+  CHECK_FALSE(exactGpuHalvings({2560, 1440}, {960, 540}, 6));
+  CHECK_FALSE(exactGpuHalvings({960, 540}, {960, 540}, 6));
+}
+
 namespace {
 
 class CancellingObserver final : public fe::DiagnosticObserver {
@@ -49,6 +64,31 @@ class CancellingObserver final : public fe::DiagnosticObserver {
  private:
   fe::CancellationToken& token_;
   std::size_t cancel_at_{};
+};
+
+class CountingSource final : public fe::FrameSource {
+ public:
+  explicit CountingSource(std::int64_t frame_count) : frame_count_{frame_count} {}
+
+  [[nodiscard]] const fe::VideoInfo& info() const override { return info_; }
+
+  [[nodiscard]] std::optional<fe::DecodedFrame> read() override {
+    if (next_index_ >= frame_count_) {
+      return std::nullopt;
+    }
+    fe::DecodedFrame frame;
+    frame.decoded_frame_index = next_index_++;
+    frame.timings.packet_decode_seconds = 0.25;
+    frame.timings.pixel_conversion_seconds = 0.5;
+    return frame;
+  }
+
+  [[nodiscard]] std::int64_t nextIndex() const { return next_index_; }
+
+ private:
+  fe::VideoInfo info_{};
+  std::int64_t frame_count_{};
+  std::int64_t next_index_{};
 };
 
 }  // namespace
@@ -380,6 +420,81 @@ TEST_CASE("real decoder honors a nonzero bounded frame range") {
   REQUIRE(result.selected_frames.size() == 2U);
   CHECK(result.selected_frames.front().decoded_frame_index == 4);
   CHECK(result.selected_frames.back().decoded_frame_index == 6);
+  CHECK(result.timings.source_frames_read == 7U);
+}
+
+TEST_CASE("libav decoder skip advances exactly like read") {
+  for (const std::string name : {"cfr_h264.mp4", "cfr_hevc.mp4", "vfr_timing.mov"}) {
+    DYNAMIC_SECTION(name) {
+      const MaterializedFixture fixture{name};
+      std::vector<std::optional<std::int64_t>> read_pts;
+      {
+        fe::VideoDecoder decoder{fixture.path()};
+        while (const auto frame = decoder.read()) {
+          read_pts.push_back(frame->pts);
+        }
+      }
+      REQUIRE(read_pts.size() >= 3U);
+
+      for (std::size_t skipped = 1; skipped < read_pts.size(); ++skipped) {
+        fe::VideoDecoder decoder{fixture.path()};
+        for (std::size_t index = 0; index < skipped; ++index) {
+          const auto timings = decoder.skip();
+          REQUIRE(timings);
+          CHECK(timings->packet_decode_seconds >= 0.0);
+        }
+        const auto next = decoder.read();
+        REQUIRE(next);
+        CHECK(next->decoded_frame_index == static_cast<std::int64_t>(skipped));
+        CHECK(next->pts == read_pts[skipped]);
+      }
+
+      fe::VideoDecoder decoder{fixture.path()};
+      for (std::size_t index = 0; index < read_pts.size(); ++index) {
+        REQUIRE(decoder.skip());
+      }
+      CHECK_FALSE(decoder.skip());
+      CHECK_FALSE(decoder.read());
+    }
+  }
+}
+
+TEST_CASE("libav decoder skip after a seek advances like read") {
+  const MaterializedFixture fixture{"cfr_h264.mp4"};
+  std::vector<std::int64_t> read_indices;
+  std::vector<std::optional<std::int64_t>> read_pts;
+  {
+    fe::VideoDecoder decoder{fixture.path()};
+    decoder.seekToSeconds(0.5);
+    while (const auto frame = decoder.read()) {
+      read_indices.push_back(frame->decoded_frame_index);
+      read_pts.push_back(frame->pts);
+    }
+  }
+  REQUIRE(read_indices.size() >= 2U);
+
+  fe::VideoDecoder decoder{fixture.path()};
+  decoder.seekToSeconds(0.5);
+  REQUIRE(decoder.skip());
+  const auto next = decoder.read();
+  REQUIRE(next);
+  CHECK(next->decoded_frame_index == read_indices[1]);
+  CHECK(next->pts == read_pts[1]);
+}
+
+TEST_CASE("default frame source skip consumes one frame and reports its timings") {
+  CountingSource source{2};
+
+  const auto first = source.skip();
+  REQUIRE(first);
+  CHECK(first->packet_decode_seconds == Approx(0.25));
+  CHECK(first->pixel_conversion_seconds == Approx(0.5));
+  CHECK(source.nextIndex() == 1);
+
+  REQUIRE(source.skip());
+  CHECK(source.nextIndex() == 2);
+  CHECK_FALSE(source.skip());
+  CHECK(source.nextIndex() == 2);
 }
 
 TEST_CASE("real decoder processes disjoint presentation-time regions") {

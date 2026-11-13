@@ -48,4 +48,30 @@ namespace frame_extractor::detail {
       && count_drift_frames < maximum_frame_drift;
 }
 
+// Number of exact 2x scale_cuda halvings from source to target, or nullopt
+// when the GPU result could differ from the CPU path. At exactly 2x, bilinear
+// scale_cuda and OpenCV INTER_AREA both compute (a + b + c + d + 2) >> 2.
+// Chaining halvings rounds at every stage, while the CPU resizes in one step
+// and rounds once. Each halving adds two fractional bits, so chaining stays
+// exact only while the low padding bits of the luma sample absorb them
+// (P010 has 6, so up to 3 halvings). 8-bit formats have none, so they get a
+// single halving.
+[[nodiscard]] inline std::optional<int> exactGpuHalvings(
+    cv::Size source, cv::Size target, int luma_padding_bits) {
+  int stages = 0;
+  cv::Size current = source;
+  while (current != target && current.width % 2 == 0 && current.height % 2 == 0
+         && current.width / 2 >= target.width && current.height / 2 >= target.height) {
+    current = {current.width / 2, current.height / 2};
+    ++stages;
+  }
+  if (current != target || stages == 0) {
+    return std::nullopt;
+  }
+  if (stages > std::max(1, luma_padding_bits / 2)) {
+    return std::nullopt;
+  }
+  return stages;
+}
+
 }  // namespace frame_extractor::detail

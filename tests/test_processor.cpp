@@ -74,6 +74,12 @@ class FakeFrameSource final : public fe::FrameSource {
   [[nodiscard]] std::size_t reads() const { return read_count_; }
   [[nodiscard]] const std::vector<double>& seekTimes() const { return seek_times_; }
 
+  void setAnalysisConversionMethod(fe::AnalysisConversionMethod method) {
+    for (auto& frame : frames_) {
+      frame.timings.analysis_conversion_method = method;
+    }
+  }
+
   void clearPresentationTimestamps() {
     for (auto& frame : frames_) {
       frame.pts.reset();
@@ -277,6 +283,18 @@ TEST_CASE("processor honors start and maximum frame bounds") {
   REQUIRE(started.total_frames);
   CHECK(*started.total_frames == 3U);
   REQUIRE(std::holds_alternative<fe::RunFinishedEvent>(observer.events.back()));
+}
+
+TEST_CASE("skipped start frames count toward conversion method totals") {
+  // FakeFrameSource keeps the default skip(), which reads and converts each
+  // skipped frame, so those frames must be counted like analyzed ones.
+  FakeFrameSource source{6};
+  source.setAnalysisConversionMethod(fe::AnalysisConversionMethod::opencv_native_luma);
+  const auto result = fe::processFrames(source, testConfig(), {"fixture.mov", 2, 3});
+
+  CHECK(result.timings.source_frames_read == 5U);
+  CHECK(result.timings.analysis_native_luma_frames == result.timings.source_frames_read);
+  CHECK(result.timings.analysis_ffmpeg_fallback_frames == 0U);
 }
 
 TEST_CASE("single frame is selected once as both boundaries") {

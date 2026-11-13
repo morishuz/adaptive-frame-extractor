@@ -294,6 +294,13 @@ Pass these options on the initial CMake configure command when needed:
 
 The presets enable tests and the GUI by default.
 
+Set these environment variables when running the CLI or GUI to change decoder behaviour:
+
+| Variable | Effect |
+| --- | --- |
+| `FRAME_EXTRACTOR_DISABLE_HWDEC=1` | Decode in software even when a hardware decoder is available |
+| `FRAME_EXTRACTOR_DISABLE_GPU_SCALE=1` | With CUDA decoding, copy full frames to system memory instead of shrinking them on the GPU |
+
 ## Troubleshooting
 
 ### CMake cannot find OpenCV on macOS
