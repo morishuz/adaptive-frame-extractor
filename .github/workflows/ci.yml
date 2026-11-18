@@ -15,6 +15,12 @@ concurrency:
 
 jobs:
   macos:
+    # package-macos.yml contains a publish-preview job that requests these
+    # permissions. It only runs on a manual dispatch of that workflow, but a
+    # caller must still grant them or this workflow fails at startup.
+    permissions:
+      actions: read
+      contents: write
     uses: ./.github/workflows/package-macos.yml
 
   windows:
