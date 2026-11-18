@@ -368,8 +368,13 @@ std::function<cv::Mat()> fullBgr16Renderer(
     std::shared_ptr<AVFrame> frame,
     int rotation_degrees) {
   return [frame = std::move(frame), rotation_degrees] {
+    // Accurate rounding and bit-exact mode select swscale's reference code, so
+    // saved 16-bit pixels do not depend on the platform's SIMD paths. This
+    // runs only for selected frames, so the slower path is not a concern.
     return applyDisplayRotation(
-        convertToBgr16Once(*frame, SWS_BILINEAR), rotation_degrees);
+        convertToBgr16Once(
+            *frame, SWS_BILINEAR | SWS_ACCURATE_RND | SWS_BITEXACT),
+        rotation_degrees);
   };
 }
 

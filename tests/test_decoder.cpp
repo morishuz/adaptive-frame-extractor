@@ -298,6 +298,7 @@ TEST_CASE("automatic analysis preserves native planar high-bit-depth luma") {
 }
 
 TEST_CASE("deferred frames render 16-bit BGR from high-bit-depth sources") {
+  std::vector<cv::Mat> deep_frames;
   for (const auto& name : std::vector<std::string>{
            "planar_10bit_ffv1.mkv",
            "planar_12bit_ffv1.mkv",
@@ -316,21 +317,39 @@ TEST_CASE("deferred frames render 16-bit BGR from high-bit-depth sources") {
     CHECK(deep.type() == CV_16UC3);
     REQUIRE(deep.size() == shallow.size());
 
-    // The 16-bit image must be the same picture as the 8-bit one...
+    // The 16-bit image must be the same picture as the 8-bit one. Compare
+    // luma: it is independent of how each swscale path interpolates the
+    // subsampled chroma, which differs between platforms, but it still
+    // exposes a wrong range, matrix, or channel order.
     cv::Mat narrowed;
     deep.convertTo(narrowed, CV_8U, 1.0 / 257.0);
-    cv::Mat difference;
-    cv::absdiff(narrowed, shallow, difference);
-    const cv::Scalar mean_difference = cv::mean(difference);
-    CHECK(mean_difference[0] < 1.5);
-    CHECK(mean_difference[1] < 1.5);
-    CHECK(mean_difference[2] < 1.5);
+    cv::Mat narrowed_luma;
+    cv::Mat shallow_luma;
+    cv::cvtColor(narrowed, narrowed_luma, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(shallow, shallow_luma, cv::COLOR_BGR2GRAY);
+    cv::Mat luma_difference;
+    cv::absdiff(narrowed_luma, shallow_luma, luma_difference);
+    CHECK(cv::mean(luma_difference)[0] < 1.5);
+
+    cv::Mat color_difference;
+    cv::absdiff(narrowed, shallow, color_difference);
+    const cv::Scalar mean_color_difference = cv::mean(color_difference);
+    WARN(name << " mean 8-bit vs 16-bit difference (B, G, R): "
+              << mean_color_difference[0] << ", " << mean_color_difference[1]
+              << ", " << mean_color_difference[2]);
 
     // ...while carrying levels that 8 bits cannot represent.
     cv::Mat widened;
     shallow.convertTo(widened, CV_16U, 257.0);
     CHECK(cv::norm(deep, widened, cv::NORM_INF) > 0.0);
+    deep_frames.push_back(deep);
   }
+
+  // The fixtures hold one picture at three depths, so their 16-bit renderings
+  // must agree to within the coarsest source's rounding (two 8-bit steps).
+  REQUIRE(deep_frames.size() == 3U);
+  CHECK(cv::norm(deep_frames[0], deep_frames[2], cv::NORM_INF) <= 2.0 * 257.0);
+  CHECK(cv::norm(deep_frames[1], deep_frames[2], cv::NORM_INF) <= 2.0 * 257.0);
 }
 
 TEST_CASE("16-bit rendering follows display rotation and widens 8-bit frames") {
