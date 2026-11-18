@@ -11,6 +11,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -383,6 +384,57 @@ TEST_CASE("image writer supports Unicode filesystem paths") {
   std::filesystem::remove_all(base);
 }
 
+TEST_CASE("TIFF output is lossless 8-bit and named in the manifest and summary") {
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const auto base = std::filesystem::temp_directory_path()
+      / ("frame_extractor_tiff_output_test_" + unique);
+  fe::Config config;
+  config.output.image_format = fe::ImageFormat::tiff;
+  const auto result = sampleResult();
+
+  // A gradient with distinct channels catches channel swaps and lossy encoding.
+  cv::Mat first_frame(12, 16, CV_8UC3);
+  for (int row = 0; row < first_frame.rows; ++row) {
+    for (int column = 0; column < first_frame.cols; ++column) {
+      first_frame.at<cv::Vec3b>(row, column) = cv::Vec3b{
+          static_cast<unsigned char>(column * 15),
+          static_cast<unsigned char>(row * 20),
+          static_cast<unsigned char>(255 - column * 7 - row * 3)};
+    }
+  }
+  const cv::Mat final_frame(12, 16, CV_8UC3, cv::Scalar{40, 50, 60});
+
+  fe::RunOutputWriter writer{base, config};
+  writer.onFrameSelected(result.selected_frames[0], first_frame);
+  writer.onFrameSelected(result.selected_frames[1], final_frame);
+  writer.finalize(
+      "input.mov",
+      fe::ProcessOptions{},
+      fe::VideoInfo{16, 12, {1, 600}, {25, 1}, 5'000, "h264"},
+      result,
+      std::chrono::duration<double>{0.5});
+  const auto paths = writer.paths();
+
+  const auto first_image_path = paths.keyframe_dir / "keyframe_0000_000002.tiff";
+  REQUIRE(std::filesystem::is_regular_file(first_image_path));
+  CHECK(std::filesystem::is_regular_file(
+      paths.keyframe_dir / "keyframe_0001_000004.tiff"));
+  const auto decoded = cv::imread(first_image_path.string(), cv::IMREAD_UNCHANGED);
+  REQUIRE_FALSE(decoded.empty());
+  CHECK(decoded.type() == CV_8UC3);
+  REQUIRE(decoded.size() == first_frame.size());
+  CHECK(cv::norm(decoded, first_frame, cv::NORM_INF) == 0.0);
+
+  const auto manifest = readText(paths.manifest_path);
+  CHECK(manifest.find("keyframes/keyframe_0000_000002.tiff,0,2,0,")
+      != std::string::npos);
+  const auto summary = readText(paths.summary_path);
+  CHECK(hasSummaryField(summary, "Image format", "TIFF, 8-bit, LZW compression"));
+  CHECK(readText(paths.config_path).find("image_format: tiff") != std::string::npos);
+  std::filesystem::remove_all(base);
+}
+
 TEST_CASE("asynchronous output writer propagates background failures") {
   const auto unique = std::to_string(
       std::chrono::steady_clock::now().time_since_epoch().count());
@@ -506,6 +558,15 @@ TEST_CASE("atomic image writer validates paths without damaging existing output"
   const auto uppercase = base / "frame.PNG";
   png_writer.writeAtomically(uppercase, frame);
   CHECK_FALSE(cv::imread(uppercase.string(), cv::IMREAD_COLOR).empty());
+
+  const fe::detail::ImageFileWriter tiff_writer{fe::ImageFormat::tiff};
+  CHECK_THROWS_AS(
+      tiff_writer.writeAtomically(base / "frame.png", frame),
+      std::invalid_argument);
+  for (const char* name : {"frame.tiff", "frame.TIF"}) {
+    tiff_writer.writeAtomically(base / name, frame);
+    CHECK_FALSE(cv::imread((base / name).string(), cv::IMREAD_COLOR).empty());
+  }
 
   std::filesystem::remove_all(base);
 }

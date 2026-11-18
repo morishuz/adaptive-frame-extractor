@@ -351,15 +351,21 @@ std::string buildSummary(
         "Selection",
         "Adaptive (" + humanize(process_options.selection_profile) + " profile)");
   }
-  if (image_format == ImageFormat::jpg) {
-    summary.field(
-        "Image format",
-        "JPEG, quality " + std::to_string(encoding_settings.jpeg_quality));
-  } else {
-    summary.field(
-        "Image format",
-        "PNG, compression level "
-            + std::to_string(encoding_settings.png_compression_level));
+  switch (image_format) {
+    case ImageFormat::jpg:
+      summary.field(
+          "Image format",
+          "JPEG, quality " + std::to_string(encoding_settings.jpeg_quality));
+      break;
+    case ImageFormat::png:
+      summary.field(
+          "Image format",
+          "PNG, compression level "
+              + std::to_string(encoding_settings.png_compression_level));
+      break;
+    case ImageFormat::tiff:
+      summary.field("Image format", "TIFF, 8-bit, LZW compression");
+      break;
   }
   summary.field(
       "Keyframe layout",

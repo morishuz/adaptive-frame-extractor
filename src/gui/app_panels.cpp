@@ -116,6 +116,14 @@ ControlSidebarResult drawControlSidebar(
     project.image_format = ImageFormat::png;
     result.project_changed = true;
   }
+  ImGui::SameLine();
+  // The short label keeps all three choices on one line at the minimum
+  // sidebar width.
+  if (ImGui::RadioButton("TIFF", project.image_format == ImageFormat::tiff)) {
+    project.image_format = ImageFormat::tiff;
+    result.project_changed = true;
+  }
+  ImGui::SetItemTooltip("Lossless 8-bit TIFF with LZW compression");
   ImGui::EndDisabled();
   ImGui::Spacing();
   ImGui::BeginDisabled(!view.controls_enabled || project.regions.empty());

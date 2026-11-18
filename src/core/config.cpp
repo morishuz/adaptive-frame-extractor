@@ -163,7 +163,14 @@ ImageFormat parseImageFormat(const YAML::Node& parent, ImageFormat fallback) {
   if (value == "png") {
     return ImageFormat::png;
   }
-  throw std::invalid_argument("output.image_format must be one of: jpg, jpeg, png");
+  if (value == "tif") {
+    value = "tiff";
+  }
+  if (value == "tiff") {
+    return ImageFormat::tiff;
+  }
+  throw std::invalid_argument(
+      "output.image_format must be one of: jpg, jpeg, png, tif, tiff");
 }
 
 YAML::Node colorNode(const std::array<std::uint8_t, 3>& color) {
@@ -379,6 +386,8 @@ std::string toString(ImageFormat format) {
       return "jpg";
     case ImageFormat::png:
       return "png";
+    case ImageFormat::tiff:
+      return "tiff";
   }
   throw std::logic_error("Unknown image format");
 }
