@@ -76,6 +76,34 @@ TEST_CASE("config accepts compatible aliases and rejects invalid values") {
   }
   CHECK_THROWS_AS(fe::loadConfig(temporary), std::invalid_argument);
 
+  CHECK(fe::Config{}.output.image_bit_depth == 8);
+  CHECK(fe::dumpConfigYaml(fe::Config{}).find("image_bit_depth: 8")
+      != std::string::npos);
+  for (const char* format : {"png", "tiff"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << "output:\n  image_format: " << format
+             << "\n  image_bit_depth: 16\n";
+    }
+    const auto deep_config = fe::loadConfig(temporary);
+    CHECK(deep_config.output.image_bit_depth == 16);
+    CHECK(fe::dumpConfigYaml(deep_config).find("image_bit_depth: 16")
+        != std::string::npos);
+  }
+  // JPEG has no 16-bit mode, and only 8 and 16 are supported depths.
+  for (const char* invalid : {
+           "output:\n  image_format: jpg\n  image_bit_depth: 16\n",
+           "output:\n  image_bit_depth: 16\n",
+           "output:\n  image_format: png\n  image_bit_depth: 12\n"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << invalid;
+    }
+    CHECK_THROWS_AS(fe::loadConfig(temporary), std::invalid_argument);
+  }
+
   {
     std::ofstream output{temporary};
     REQUIRE(output.good());

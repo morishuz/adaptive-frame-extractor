@@ -145,7 +145,8 @@ class ManualFrameExporter::Impl {
       std::filesystem::path input_video,
       std::filesystem::path output_directory,
       double timestamp_seconds,
-      ImageFormat image_format) {
+      ImageFormat image_format,
+      int image_bit_depth) {
     reapFinished();
     if (worker_.joinable()) {
       return false;
@@ -173,12 +174,14 @@ class ManualFrameExporter::Impl {
            input_video = std::move(input_video),
            output_directory = std::move(output_directory),
            timestamp_seconds,
-           image_format] {
+           image_format,
+           image_bit_depth] {
             run(
                 input_video,
                 output_directory,
                 timestamp_seconds,
-                image_format);
+                image_format,
+                image_bit_depth);
           }};
     } catch (const std::exception& error) {
       std::lock_guard lock{mutex_};
@@ -216,8 +219,10 @@ class ManualFrameExporter::Impl {
       const std::filesystem::path& input_video,
       const std::filesystem::path& output_directory,
       double target_seconds,
-      ImageFormat image_format) noexcept {
+      ImageFormat image_format,
+      int image_bit_depth) noexcept {
     try {
+      validateImageBitDepth(image_format, image_bit_depth);
       const auto frame_directory = output_directory / "manual_frames"
           / sourceDirectoryName(input_video);
       auto source = source_factory_(input_video);
@@ -247,8 +252,12 @@ class ManualFrameExporter::Impl {
       const bool already_exists = existingRegularFile(output_path);
 
       if (!already_exists) {
-        detail::ImageFileWriter{image_format}.writeAtomically(
-            output_path, selected->fullBgr());
+        const detail::ImageFileWriter writer{image_format};
+        if (image_bit_depth == 16) {
+          writer.writeAtomically(output_path, selected->fullBgr16());
+        } else {
+          writer.writeAtomically(output_path, selected->fullBgr());
+        }
       }
 
       std::lock_guard lock{mutex_};
@@ -302,12 +311,14 @@ bool ManualFrameExporter::start(
     std::filesystem::path input_video,
     std::filesystem::path output_directory,
     double timestamp_seconds,
-    ImageFormat image_format) {
+    ImageFormat image_format,
+    int image_bit_depth) {
   return impl_->start(
       std::move(input_video),
       std::move(output_directory),
       timestamp_seconds,
-      image_format);
+      image_format,
+      image_bit_depth);
 }
 
 void ManualFrameExporter::reset() { impl_->reset(); }

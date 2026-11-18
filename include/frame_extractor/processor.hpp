@@ -60,6 +60,14 @@ class SelectedFrameSink {
  public:
   virtual ~SelectedFrameSink() = default;
   virtual void onFrameSelected(const SelectedFrame& selected, const cv::Mat& frame_bgr) = 0;
+  // Called by the processor for each selected frame. A sink that needs
+  // something other than the 8-bit BGR image, such as 16-bit output,
+  // overrides this; the default forwards the 8-bit image.
+  virtual void onDecodedFrameSelected(
+      const SelectedFrame& selected,
+      const DecodedFrame& frame) {
+    onFrameSelected(selected, frame.fullBgr());
+  }
   virtual void onSelectionUpdated(const SelectedFrame& selected) { (void)selected; }
 };
 

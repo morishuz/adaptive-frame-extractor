@@ -44,7 +44,8 @@ Fast motion:   ●   ●   ●   ●   ●   ●   ●   ●
 - **Fixed-interval extraction** when exact sampling is preferred
 - **Multiple timeline regions** to extract only useful sections of a video
 - **Manual frame extraction** from the preview
-- **JPEG, lossless PNG, or lossless 8-bit TIFF** output at source resolution
+- **JPEG, lossless PNG, or lossless TIFF** output at source resolution
+- Optional **16-bit PNG and TIFF**, keeping the precision of 10-bit and higher video
 - Frame-accurate navigation and live preview
 - Optional separate output folders for each selected region
 - CSV manifest, extraction settings, and summary saved alongside the images
@@ -78,7 +79,7 @@ and drag **Frame Extractor.app** into **Applications**.
 2. Choose an output directory.
 3. Select an adaptive preset or fixed interval.
 4. Optionally mark one or more regions on the timeline.
-5. Choose JPEG, PNG, or TIFF.
+5. Choose JPEG, PNG, or TIFF, and optionally 16-bit for PNG or TIFF.
 6. Click **Start extraction**.
 
 For adaptive extraction, **Low**, **Medium**, and **High** control how densely

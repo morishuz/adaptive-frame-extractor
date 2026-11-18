@@ -297,6 +297,64 @@ TEST_CASE("automatic analysis preserves native planar high-bit-depth luma") {
   CHECK(cv::norm(analysis_frames[0], analysis_frames[2], cv::NORM_INF) <= 1.0);
 }
 
+TEST_CASE("deferred frames render 16-bit BGR from high-bit-depth sources") {
+  for (const auto& name : std::vector<std::string>{
+           "planar_10bit_ffv1.mkv",
+           "planar_12bit_ffv1.mkv",
+           "planar_16bit_ffv1.mkv"}) {
+    INFO(name);
+    const MaterializedFixture fixture{name};
+    fe::VideoDecoder decoder{
+        fixture.path(),
+        fe::VideoDecoderOptions{.defer_full_bgr = true}};
+
+    const auto frame = decoder.read();
+    REQUIRE(frame);
+    REQUIRE(static_cast<bool>(frame->render_bgr16));
+    const cv::Mat deep = frame->fullBgr16();
+    const cv::Mat shallow = frame->fullBgr().clone();
+    CHECK(deep.type() == CV_16UC3);
+    REQUIRE(deep.size() == shallow.size());
+
+    // The 16-bit image must be the same picture as the 8-bit one...
+    cv::Mat narrowed;
+    deep.convertTo(narrowed, CV_8U, 1.0 / 257.0);
+    cv::Mat difference;
+    cv::absdiff(narrowed, shallow, difference);
+    const cv::Scalar mean_difference = cv::mean(difference);
+    CHECK(mean_difference[0] < 1.5);
+    CHECK(mean_difference[1] < 1.5);
+    CHECK(mean_difference[2] < 1.5);
+
+    // ...while carrying levels that 8 bits cannot represent.
+    cv::Mat widened;
+    shallow.convertTo(widened, CV_16U, 257.0);
+    CHECK(cv::norm(deep, widened, cv::NORM_INF) > 0.0);
+  }
+}
+
+TEST_CASE("16-bit rendering follows display rotation and widens 8-bit frames") {
+  const MaterializedFixture rotated{"rotated_h264.mov"};
+  fe::VideoDecoder deferred{
+      rotated.path(),
+      fe::VideoDecoderOptions{.defer_full_bgr = true}};
+  const auto rotated_frame = deferred.read();
+  REQUIRE(rotated_frame);
+  CHECK(rotated_frame->fullBgr16().size() == rotated_frame->fullBgr().size());
+
+  // Without a retained source frame, the 8-bit image is widened exactly.
+  const MaterializedFixture fixture{"cfr_h264.mp4"};
+  fe::VideoDecoder eager{fixture.path()};
+  const auto frame = eager.read();
+  REQUIRE(frame);
+  CHECK_FALSE(static_cast<bool>(frame->render_bgr16));
+  const cv::Mat deep = frame->fullBgr16();
+  CHECK(deep.type() == CV_16UC3);
+  cv::Mat expected;
+  frame->fullBgr().convertTo(expected, CV_16U, 257.0);
+  CHECK(cv::norm(deep, expected, cv::NORM_INF) == 0.0);
+}
+
 TEST_CASE("decoder can defer color conversion without adaptive analysis") {
   const MaterializedFixture fixture{"cfr_hevc.mp4"};
   fe::VideoDecoder decoder{

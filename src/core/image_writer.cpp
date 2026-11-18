@@ -65,6 +65,13 @@ void ImageFileWriter::writeAtomically(
   if (frame_bgr.empty()) {
     throw std::invalid_argument("image must not be empty");
   }
+  const bool sixteen_bit = frame_bgr.depth() == CV_16U;
+  if (frame_bgr.depth() != CV_8U && !sixteen_bit) {
+    throw std::invalid_argument("image must have 8 or 16 bits per channel");
+  }
+  if (sixteen_bit && format_ == ImageFormat::jpg) {
+    throw std::invalid_argument("JPEG output supports only 8 bits per channel");
+  }
 
   std::error_code error;
   const auto parent = path.parent_path();

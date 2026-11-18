@@ -259,7 +259,7 @@ ProcessingResult processFrames(
     const auto& selected = result.selected_frames.back();
     if (selected_frame_sink != nullptr) {
       const auto started = Clock::now();
-      selected_frame_sink->onFrameSelected(selected, active.current_frame.fullBgr());
+      selected_frame_sink->onDecodedFrameSelected(selected, active.current_frame);
       result.timings.keyframe_sink_seconds += elapsedSeconds(started);
     }
     emit(observer, KeyframeSelectedEvent{

@@ -72,11 +72,22 @@ RunPaths createRunPaths(const std::filesystem::path& base_output_dir) {
       run_dir / "summary.txt"};
 }
 
+namespace {
+
+// Runs before the run directory is created, so a bad setting leaves no output.
+int validatedBitDepth(const OutputConfig& output) {
+  validateImageBitDepth(output.image_format, output.image_bit_depth);
+  return output.image_bit_depth;
+}
+
+}  // namespace
+
 RunOutputWriter::RunOutputWriter(
     const std::filesystem::path& base_output_dir,
     const Config& config,
     RunOutputOptions options)
     : image_format_{config.output.image_format},
+      image_bit_depth_{validatedBitDepth(config.output)},
       options_{options},
       paths_{createRunPaths(base_output_dir)} {
   try {
@@ -102,8 +113,27 @@ void RunOutputWriter::onFrameSelected(
   }
   const auto image_path = paths_.run_dir / detail::keyframeRelativePath(
       selected, image_format_, options_.group_keyframes_by_region);
-  image_writer_->enqueue(image_path, frame_bgr);
+  if (image_bit_depth_ == 16 && frame_bgr.depth() == CV_8U) {
+    cv::Mat widened;
+    frame_bgr.convertTo(widened, CV_16U, 257.0);
+    image_writer_->enqueue(image_path, widened);
+  } else if (image_bit_depth_ == 8 && frame_bgr.depth() != CV_8U) {
+    throw std::invalid_argument(
+        "selected keyframe image must be 8-bit for 8-bit output");
+  } else {
+    image_writer_->enqueue(image_path, frame_bgr);
+  }
   ++enqueued_images_;
+}
+
+void RunOutputWriter::onDecodedFrameSelected(
+    const SelectedFrame& selected,
+    const DecodedFrame& frame) {
+  if (image_bit_depth_ == 16) {
+    onFrameSelected(selected, frame.fullBgr16());
+  } else {
+    onFrameSelected(selected, frame.fullBgr());
+  }
 }
 
 std::chrono::duration<double> RunOutputWriter::finalize(
@@ -139,6 +169,7 @@ std::chrono::duration<double> RunOutputWriter::finalize(
       result,
       runtime,
       image_format_,
+      image_bit_depth_,
       options_.group_keyframes_by_region,
       image_writer_->encodingSettings(),
       failure_message);

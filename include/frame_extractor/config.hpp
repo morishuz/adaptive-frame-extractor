@@ -56,6 +56,8 @@ struct VisualizationConfig {
 
 struct OutputConfig {
   ImageFormat image_format{ImageFormat::jpg};
+  // Bits per channel in saved images: 8 or 16. JPEG supports only 8.
+  int image_bit_depth{8};
 
   bool operator==(const OutputConfig&) const = default;
 };
@@ -77,5 +79,7 @@ struct Config {
 [[nodiscard]] std::string dumpConfigYaml(const Config& config);
 [[nodiscard]] std::string toString(DisPreset preset);
 [[nodiscard]] std::string toString(ImageFormat format);
+// Throws std::invalid_argument unless the depth is 8, or 16 with PNG or TIFF.
+void validateImageBitDepth(ImageFormat format, int image_bit_depth);
 
 }  // namespace frame_extractor

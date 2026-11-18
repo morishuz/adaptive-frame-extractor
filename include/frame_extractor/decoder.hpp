@@ -60,9 +60,15 @@ struct DecodedFrame {
   cv::Mat analysis_gray{};
   std::function<cv::Mat()> render_bgr{};
   std::function<cv::Mat(int, int)> render_preview_bgr{};
+  // Converts the retained source frame straight to 16-bit BGR, keeping the
+  // precision of high-bit-depth video. Empty when no source frame is retained.
+  std::function<cv::Mat()> render_bgr16{};
 
   [[nodiscard]] std::optional<double> ptsSeconds() const;
   [[nodiscard]] const cv::Mat& fullBgr() const;
+  // Full-resolution CV_16UC3 image. Without a retained source frame this is
+  // the 8-bit image widened to the 16-bit range.
+  [[nodiscard]] cv::Mat fullBgr16() const;
   [[nodiscard]] cv::Mat previewBgr(int maximum_width, int maximum_height) const;
 };
 

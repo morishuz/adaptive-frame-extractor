@@ -274,6 +274,7 @@ std::string buildSummary(
     const ProcessingResult& result,
     std::chrono::duration<double> runtime,
     ImageFormat image_format,
+    int image_bit_depth,
     bool group_keyframes_by_region,
     const ImageEncodingSettings& encoding_settings,
     std::string_view failure_message) {
@@ -360,11 +361,14 @@ std::string buildSummary(
     case ImageFormat::png:
       summary.field(
           "Image format",
-          "PNG, compression level "
+          std::string{image_bit_depth == 16 ? "PNG, 16-bit" : "PNG"}
+              + ", compression level "
               + std::to_string(encoding_settings.png_compression_level));
       break;
     case ImageFormat::tiff:
-      summary.field("Image format", "TIFF, 8-bit, LZW compression");
+      summary.field(
+          "Image format",
+          "TIFF, " + std::to_string(image_bit_depth) + "-bit, LZW compression");
       break;
   }
   summary.field(
@@ -522,6 +526,7 @@ void writeRunReports(
     const ProcessingResult& result,
     std::chrono::duration<double> runtime,
     ImageFormat image_format,
+    int image_bit_depth,
     bool group_keyframes_by_region,
     const ImageEncodingSettings& encoding_settings,
     std::string_view failure_message) {
@@ -534,6 +539,7 @@ void writeRunReports(
       result,
       runtime,
       image_format,
+      image_bit_depth,
       group_keyframes_by_region,
       encoding_settings,
       failure_message);

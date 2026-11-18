@@ -20,6 +20,9 @@ struct ProjectState {
   SelectionChoice selection{SelectionChoice::medium};
   int frame_interval{8};
   ImageFormat image_format{ImageFormat::jpg};
+  // The user's 8/16 choice. It is kept while JPEG is selected so switching
+  // back to PNG or TIFF restores it; see outputBitDepthForProject().
+  int image_bit_depth{8};
   bool group_keyframes_by_region{};
   double playhead_seconds{};
   std::vector<TimeRange> regions;
@@ -50,6 +53,8 @@ class ProjectStore {
 [[nodiscard]] ProcessOptions processOptionsForProject(
     const ProjectState& state,
     std::string input_label);
+// Bits per channel actually written: always 8 for JPEG.
+[[nodiscard]] int outputBitDepthForProject(const ProjectState& state);
 [[nodiscard]] Config configForProject(const ProjectState& state, Config profile_config);
 [[nodiscard]] RunOutputOptions outputOptionsForProject(const ProjectState& state);
 [[nodiscard]] std::optional<std::size_t> regionIndexAt(

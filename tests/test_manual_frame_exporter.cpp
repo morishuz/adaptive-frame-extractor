@@ -153,6 +153,32 @@ TEST_CASE("manual frame exporter seeks and saves the first frame at or after the
   CHECK(saved.rows == 19);
 }
 
+TEST_CASE("manual frame exporter writes 16-bit images when requested") {
+  TestDirectory output{"frame_extractor_manual_16bit"};
+  const auto state = std::make_shared<FakeSourceState>();
+  gui::ManualFrameExporter exporter{
+      [state](const std::filesystem::path&) {
+        return std::make_unique<FakeSource>(state);
+      }};
+
+  REQUIRE(exporter.start(
+      "video.mov", output.path, 3.0, fe::ImageFormat::tiff, 16));
+  const auto snapshot = waitForTerminal(exporter);
+  REQUIRE(snapshot.phase == gui::ManualFrameExportPhase::complete);
+  const cv::Mat saved = cv::imread(
+      snapshot.output_path.string(), cv::IMREAD_UNCHANGED);
+  REQUIRE_FALSE(saved.empty());
+  CHECK(saved.type() == CV_16UC3);
+  CHECK(saved.at<cv::Vec3w>(0, 0)[1] == 80 * 257);
+
+  // JPEG cannot hold 16 bits, so the request fails without writing a file.
+  exporter.reset();
+  REQUIRE(exporter.start(
+      "video.mov", output.path, 3.25, fe::ImageFormat::jpg, 16));
+  const auto rejected = waitForTerminal(exporter);
+  CHECK(rejected.phase == gui::ManualFrameExportPhase::failed);
+}
+
 TEST_CASE("manual frame exporter separates videos that share a filename") {
   TestDirectory output{"frame_extractor_manual_sources"};
   const auto state = std::make_shared<FakeSourceState>();

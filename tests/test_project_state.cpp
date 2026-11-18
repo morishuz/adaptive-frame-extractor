@@ -69,6 +69,11 @@ TEST_CASE("per-video GUI project state round trips profiles and regions") {
   saved.image_format = fe::ImageFormat::tiff;
   store.save(input_video, saved);
   CHECK(store.load(input_video).image_format == fe::ImageFormat::tiff);
+  CHECK(store.load(input_video).image_bit_depth == 8);
+
+  saved.image_bit_depth = 16;
+  store.save(input_video, saved);
+  CHECK(store.load(input_video).image_bit_depth == 16);
 
   const auto state_file = std::filesystem::directory_iterator{directory / "state"}->path();
   std::ofstream legacy{state_file, std::ios::binary | std::ios::trunc};
@@ -105,7 +110,18 @@ TEST_CASE("GUI project state owns profile and region editing behavior") {
   CHECK(options.regions == state.regions);
   const auto config = gui::configForProject(state, fe::Config{});
   CHECK(config.output.image_format == fe::ImageFormat::png);
+  CHECK(config.output.image_bit_depth == 8);
   CHECK(gui::outputOptionsForProject(state).group_keyframes_by_region);
+
+  // The 16-bit choice applies to PNG and TIFF and is ignored, but remembered,
+  // while JPEG is selected.
+  state.image_bit_depth = 16;
+  CHECK(gui::configForProject(state, fe::Config{}).output.image_bit_depth == 16);
+  state.image_format = fe::ImageFormat::jpg;
+  CHECK(gui::outputBitDepthForProject(state) == 8);
+  CHECK(gui::configForProject(state, fe::Config{}).output.image_bit_depth == 8);
+  CHECK(state.image_bit_depth == 16);
+  state.image_format = fe::ImageFormat::png;
 
   state.regions.clear();
   CHECK_FALSE(gui::outputOptionsForProject(state).group_keyframes_by_region);

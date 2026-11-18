@@ -93,7 +93,7 @@ Test the packaged application on a clean machine without development libraries:
 - Check the icon, font, resizing, display scaling, and high-DPI rendering.
 - Choose and drag in videos; test the native input and output dialogs.
 - Load a second video and scrub repeatedly in both directions.
-- Test automatic profiles, fixed intervals, manual extraction, and JPEG/PNG/TIFF.
+- Test automatic profiles, fixed intervals, manual extraction, JPEG/PNG/TIFF, and 16-bit PNG/TIFF.
 - Extract the whole video and multiple regions, including separate folders.
 - Confirm boundary frames, summaries, manifests, and duplicate protection.
 - Cancel a longer run and inspect the completed output.

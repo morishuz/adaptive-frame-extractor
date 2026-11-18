@@ -130,7 +130,20 @@ ControlSidebarResult drawControlSidebar(
     project.image_format = ImageFormat::tiff;
     result.project_changed = true;
   }
-  ImGui::SetItemTooltip("Lossless 8-bit TIFF with LZW compression");
+  ImGui::SetItemTooltip("Lossless TIFF with LZW compression");
+  const bool supports_16_bit = project.image_format != ImageFormat::jpg;
+  ImGui::BeginDisabled(!supports_16_bit);
+  bool sixteen_bit = outputBitDepthForProject(project) == 16;
+  if (ImGui::Checkbox("16-bit", &sixteen_bit)) {
+    project.image_bit_depth = sixteen_bit ? 16 : 8;
+    result.project_changed = true;
+  }
+  ImGui::EndDisabled();
+  ImGui::SetItemTooltip(
+      supports_16_bit
+          ? "Save 16 bits per channel, keeping the precision of 10-bit and "
+            "higher video. Files are about twice as large."
+          : "JPEG is always 8-bit. Choose PNG or TIFF for 16-bit output.");
   ImGui::EndDisabled();
   ImGui::Spacing();
   ImGui::BeginDisabled(!view.controls_enabled || project.regions.empty());
