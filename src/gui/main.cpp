@@ -532,8 +532,12 @@ int runApplication(int argc, char** argv) {
     const float workspace_height = std::max(
         260.0F,
         workspace_available.y - thumbnail_height - plots_height - timeline_panel_height);
+    // Fonts and spacing are scaled by display_scale, so the sidebar limits
+    // must be too or its rows clip on scaled displays.
     const float sidebar_width = std::clamp(
-        workspace_available.x * 0.29F, 340.0F, 390.0F);
+        workspace_available.x * 0.29F,
+        340.0F * display_scale,
+        390.0F * display_scale);
 
     ImGui::BeginTable("Workspace layout", 2, ImGuiTableFlags_SizingStretchProp);
     ImGui::TableSetupColumn(
