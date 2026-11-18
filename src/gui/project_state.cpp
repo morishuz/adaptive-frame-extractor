@@ -90,9 +90,14 @@ ProjectState ProjectStore::load(const std::filesystem::path& input_video) const 
   if (!supportedFrameInterval(state.frame_interval)) {
     state.frame_interval = 8;
   }
-  state.image_format = root["image_format"].as<std::string>("jpg") == "png"
-      ? ImageFormat::png
-      : ImageFormat::jpg;
+  const auto image_format = root["image_format"].as<std::string>("jpg");
+  if (image_format == "png") {
+    state.image_format = ImageFormat::png;
+  } else if (image_format == "tiff") {
+    state.image_format = ImageFormat::tiff;
+  } else {
+    state.image_format = ImageFormat::jpg;
+  }
   state.group_keyframes_by_region =
       root["group_keyframes_by_region"].as<bool>(false);
   state.playhead_seconds = root["playhead_seconds"].as<double>(0.0);

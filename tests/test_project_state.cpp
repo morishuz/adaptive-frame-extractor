@@ -66,6 +66,10 @@ TEST_CASE("per-video GUI project state round trips profiles and regions") {
   CHECK(loaded.regions[0] == fe::TimeRange{2.0, 4.0});
   CHECK(loaded.regions[1] == fe::TimeRange{8.0, 10.0});
 
+  saved.image_format = fe::ImageFormat::tiff;
+  store.save(input_video, saved);
+  CHECK(store.load(input_video).image_format == fe::ImageFormat::tiff);
+
   const auto state_file = std::filesystem::directory_iterator{directory / "state"}->path();
   std::ofstream legacy{state_file, std::ios::binary | std::ios::trunc};
   legacy << "selection: fixed\nfixed_fps: 12\nplayhead_seconds: 0\n";

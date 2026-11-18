@@ -8,7 +8,7 @@
 namespace frame_extractor {
 
 enum class DisPreset { ultrafast, fast, medium };
-enum class ImageFormat { jpg, png };
+enum class ImageFormat { jpg, png, tiff };
 
 struct DisConfig {
   DisPreset preset{DisPreset::ultrafast};

@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 
 namespace fe = frame_extractor;
 
@@ -55,6 +56,25 @@ TEST_CASE("config accepts compatible aliases and rejects invalid values") {
   const auto config = fe::loadConfig(temporary);
   CHECK_FALSE(config.dis.use_spatial_propagation);
   CHECK(config.output.image_format == fe::ImageFormat::jpg);
+
+  for (const char* alias : {"tiff", "TIF"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << "output:\n  image_format: " << alias << "\n";
+    }
+    const auto tiff_config = fe::loadConfig(temporary);
+    CHECK(tiff_config.output.image_format == fe::ImageFormat::tiff);
+    CHECK(fe::dumpConfigYaml(tiff_config).find("image_format: tiff")
+        != std::string::npos);
+  }
+
+  {
+    std::ofstream output{temporary};
+    REQUIRE(output.good());
+    output << "output:\n  image_format: bmp\n";
+  }
+  CHECK_THROWS_AS(fe::loadConfig(temporary), std::invalid_argument);
 
   {
     std::ofstream output{temporary};

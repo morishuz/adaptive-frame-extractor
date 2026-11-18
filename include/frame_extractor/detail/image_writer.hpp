@@ -14,6 +14,10 @@ struct ImageEncodingSettings {
   int png_compression_level{1};
 };
 
+// TIFF output is always 8-bit with lossless LZW compression. LZW is built into
+// libtiff, so it needs no optional codec, and every common TIFF reader opens it.
+inline constexpr int tiffLzwCompression = 5;
+
 class ImageFileWriter final {
  public:
   explicit ImageFileWriter(
