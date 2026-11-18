@@ -116,9 +116,16 @@ ControlSidebarResult drawControlSidebar(
     project.image_format = ImageFormat::png;
     result.project_changed = true;
   }
-  ImGui::SameLine();
-  // The short label keeps all three choices on one line at the minimum
-  // sidebar width.
+  // Text grows with display scaling, so keep TIFF on this line only when it
+  // fits; otherwise let it wrap instead of clipping at the sidebar edge.
+  const auto& style = ImGui::GetStyle();
+  const float tiff_width = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x
+      + ImGui::CalcTextSize("TIFF").x;
+  const float row_right =
+      ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+  if (ImGui::GetItemRectMax().x + style.ItemSpacing.x + tiff_width <= row_right) {
+    ImGui::SameLine();
+  }
   if (ImGui::RadioButton("TIFF", project.image_format == ImageFormat::tiff)) {
     project.image_format = ImageFormat::tiff;
     result.project_changed = true;
