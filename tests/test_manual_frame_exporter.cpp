@@ -170,6 +170,7 @@ TEST_CASE("manual frame exporter writes 16-bit images when requested") {
   REQUIRE_FALSE(saved.empty());
   CHECK(saved.type() == CV_16UC3);
   CHECK(saved.at<cv::Vec3w>(0, 0)[1] == 80 * 257);
+  CHECK(snapshot.output_path.filename() == "frame_pts_00000000000000003000_16bit.tiff");
 
   // JPEG cannot hold 16 bits, so the request fails without writing a file.
   exporter.reset();
@@ -223,6 +224,40 @@ TEST_CASE("manual frame exporter neutralizes Windows device names") {
   REQUIRE(snapshot.phase == gui::ManualFrameExportPhase::complete);
   CHECK(snapshot.output_path.parent_path().filename().string().starts_with(
       "_con.archive-"));
+}
+
+TEST_CASE("manual frame exporter keeps 8-bit and 16-bit captures of a frame apart") {
+  TestDirectory output{"frame_extractor_manual_depths"};
+  const auto state = std::make_shared<FakeSourceState>();
+  gui::ManualFrameExporter exporter{
+      [state](const std::filesystem::path&) {
+        return std::make_unique<FakeSource>(state);
+      }};
+
+  REQUIRE(exporter.start(
+      "video.mov", output.path, 3.0, fe::ImageFormat::png, 8));
+  const auto eight_bit = waitForTerminal(exporter);
+  REQUIRE(eight_bit.phase == gui::ManualFrameExportPhase::complete);
+  REQUIRE_FALSE(eight_bit.already_exists);
+
+  exporter.reset();
+  REQUIRE(exporter.start(
+      "video.mov", output.path, 3.0, fe::ImageFormat::png, 16));
+  const auto sixteen_bit = waitForTerminal(exporter);
+  REQUIRE(sixteen_bit.phase == gui::ManualFrameExportPhase::complete);
+  CHECK_FALSE(sixteen_bit.already_exists);
+  CHECK(sixteen_bit.output_path != eight_bit.output_path);
+  CHECK(cv::imread(eight_bit.output_path.string(), cv::IMREAD_UNCHANGED).type() == CV_8UC3);
+  CHECK(cv::imread(sixteen_bit.output_path.string(), cv::IMREAD_UNCHANGED).type() == CV_16UC3);
+
+  // Going back to 8-bit finds the 8-bit capture, not the 16-bit one.
+  exporter.reset();
+  REQUIRE(exporter.start(
+      "video.mov", output.path, 3.0, fe::ImageFormat::png, 8));
+  const auto repeated = waitForTerminal(exporter);
+  REQUIRE(repeated.phase == gui::ManualFrameExportPhase::complete);
+  CHECK(repeated.already_exists);
+  CHECK(repeated.output_path == eight_bit.output_path);
 }
 
 TEST_CASE("manual frame exporter treats an existing capture as success without rewriting it") {

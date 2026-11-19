@@ -97,7 +97,8 @@ std::filesystem::path sourceDirectoryName(const std::filesystem::path& input_vid
 std::filesystem::path outputPath(
     const std::filesystem::path& directory,
     const DecodedFrame& frame,
-    ImageFormat image_format) {
+    ImageFormat image_format,
+    int image_bit_depth) {
   std::ostringstream filename;
   // Seek-derived frame ordinals can collide on variable-rate video. Use the
   // source timestamp directly, without rounding it to a frame rate or seconds.
@@ -106,6 +107,11 @@ std::filesystem::path outputPath(
   } else {
     filename << "frame_" << std::setfill('0') << std::setw(6)
              << std::max<std::int64_t>(0, frame.decoded_frame_index);
+  }
+  // An 8-bit and a 16-bit capture of the same frame share a format extension.
+  // Name them apart so that one does not count as the other already existing.
+  if (image_bit_depth == 16) {
+    filename << "_16bit";
   }
   filename << '.' << toString(image_format);
   return directory / filename.str();
@@ -248,7 +254,7 @@ class ManualFrameExporter::Impl {
       }
 
       const auto output_path = outputPath(
-          frame_directory, *selected, image_format);
+          frame_directory, *selected, image_format, image_bit_depth);
       const bool already_exists = existingRegularFile(output_path);
 
       if (!already_exists) {
