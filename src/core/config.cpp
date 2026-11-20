@@ -163,7 +163,14 @@ ImageFormat parseImageFormat(const YAML::Node& parent, ImageFormat fallback) {
   if (value == "png") {
     return ImageFormat::png;
   }
-  throw std::invalid_argument("output.image_format must be one of: jpg, jpeg, png");
+  if (value == "tif") {
+    value = "tiff";
+  }
+  if (value == "tiff") {
+    return ImageFormat::tiff;
+  }
+  throw std::invalid_argument(
+      "output.image_format must be one of: jpg, jpeg, png, tif, tiff");
 }
 
 YAML::Node colorNode(const std::array<std::uint8_t, 3>& color) {
@@ -255,7 +262,7 @@ Config loadConfig(const std::filesystem::path& path) {
        "points_plot_color_rgb",
        "threshold_line_color_rgb",
        "trigger_line_color_rgb"});
-  validateKeys(output, "output", {"image_format"});
+  validateKeys(output, "output", {"image_format", "image_bit_depth"});
 
   config.target_analysis_area_px = integerAtLeast(
       root, "target_analysis_area_px", config.target_analysis_area_px, 1);
@@ -315,6 +322,9 @@ Config loadConfig(const std::filesystem::path& path) {
       visualization, "trigger_line_color_rgb", config.visualization.trigger_line_color_rgb);
 
   config.output.image_format = parseImageFormat(output, config.output.image_format);
+  config.output.image_bit_depth = scalarOr<int>(
+      output, "image_bit_depth", config.output.image_bit_depth);
+  validateImageBitDepth(config.output.image_format, config.output.image_bit_depth);
   return config;
 }
 
@@ -352,6 +362,7 @@ std::string dumpConfigYaml(const Config& config) {
   visualization["trigger_line_color_rgb"] = colorNode(config.visualization.trigger_line_color_rgb);
 
   root["output"]["image_format"] = toString(config.output.image_format);
+  root["output"]["image_bit_depth"] = config.output.image_bit_depth;
 
   YAML::Emitter emitter;
   emitter << root;
@@ -379,8 +390,20 @@ std::string toString(ImageFormat format) {
       return "jpg";
     case ImageFormat::png:
       return "png";
+    case ImageFormat::tiff:
+      return "tiff";
   }
   throw std::logic_error("Unknown image format");
+}
+
+void validateImageBitDepth(ImageFormat format, int image_bit_depth) {
+  if (image_bit_depth != 8 && image_bit_depth != 16) {
+    throw std::invalid_argument("output.image_bit_depth must be 8 or 16");
+  }
+  if (image_bit_depth == 16 && format == ImageFormat::jpg) {
+    throw std::invalid_argument(
+        "output.image_bit_depth 16 requires output.image_format png or tiff");
+  }
 }
 
 }  // namespace frame_extractor

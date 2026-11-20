@@ -11,6 +11,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -383,6 +384,158 @@ TEST_CASE("image writer supports Unicode filesystem paths") {
   std::filesystem::remove_all(base);
 }
 
+TEST_CASE("TIFF output is lossless 8-bit and named in the manifest and summary") {
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const auto base = std::filesystem::temp_directory_path()
+      / ("frame_extractor_tiff_output_test_" + unique);
+  fe::Config config;
+  config.output.image_format = fe::ImageFormat::tiff;
+  const auto result = sampleResult();
+
+  // A gradient with distinct channels catches channel swaps and lossy encoding.
+  cv::Mat first_frame(12, 16, CV_8UC3);
+  for (int row = 0; row < first_frame.rows; ++row) {
+    for (int column = 0; column < first_frame.cols; ++column) {
+      first_frame.at<cv::Vec3b>(row, column) = cv::Vec3b{
+          static_cast<unsigned char>(column * 15),
+          static_cast<unsigned char>(row * 20),
+          static_cast<unsigned char>(255 - column * 7 - row * 3)};
+    }
+  }
+  const cv::Mat final_frame(12, 16, CV_8UC3, cv::Scalar{40, 50, 60});
+
+  fe::RunOutputWriter writer{base, config};
+  writer.onFrameSelected(result.selected_frames[0], first_frame);
+  writer.onFrameSelected(result.selected_frames[1], final_frame);
+  writer.finalize(
+      "input.mov",
+      fe::ProcessOptions{},
+      fe::VideoInfo{16, 12, {1, 600}, {25, 1}, 5'000, "h264"},
+      result,
+      std::chrono::duration<double>{0.5});
+  const auto paths = writer.paths();
+
+  const auto first_image_path = paths.keyframe_dir / "keyframe_0000_000002.tiff";
+  REQUIRE(std::filesystem::is_regular_file(first_image_path));
+  CHECK(std::filesystem::is_regular_file(
+      paths.keyframe_dir / "keyframe_0001_000004.tiff"));
+  const auto decoded = cv::imread(first_image_path.string(), cv::IMREAD_UNCHANGED);
+  REQUIRE_FALSE(decoded.empty());
+  CHECK(decoded.type() == CV_8UC3);
+  REQUIRE(decoded.size() == first_frame.size());
+  CHECK(cv::norm(decoded, first_frame, cv::NORM_INF) == 0.0);
+
+  const auto manifest = readText(paths.manifest_path);
+  CHECK(manifest.find("keyframes/keyframe_0000_000002.tiff,0,2,0,")
+      != std::string::npos);
+  const auto summary = readText(paths.summary_path);
+  CHECK(hasSummaryField(summary, "Image format", "TIFF, 8-bit, LZW compression"));
+  CHECK(readText(paths.config_path).find("image_format: tiff") != std::string::npos);
+  std::filesystem::remove_all(base);
+}
+
+TEST_CASE("16-bit output keeps full precision in PNG and TIFF") {
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const auto result = sampleResult();
+
+  // Values that are not multiples of 257 cannot survive a trip through 8 bits.
+  cv::Mat deep_frame(12, 16, CV_16UC3);
+  for (int row = 0; row < deep_frame.rows; ++row) {
+    for (int column = 0; column < deep_frame.cols; ++column) {
+      deep_frame.at<cv::Vec3w>(row, column) = cv::Vec3w{
+          static_cast<unsigned short>(column * 4001 + 1),
+          static_cast<unsigned short>(row * 5003 + 2),
+          static_cast<unsigned short>(65535 - column * 1999 - row * 997)};
+    }
+  }
+  const cv::Mat shallow_frame(12, 16, CV_8UC3, cv::Scalar{40, 50, 60});
+
+  for (const auto format : {fe::ImageFormat::png, fe::ImageFormat::tiff}) {
+    const auto extension = fe::toString(format);
+    INFO(extension);
+    const auto base = std::filesystem::temp_directory_path()
+        / ("frame_extractor_16bit_output_test_" + extension + "_" + unique);
+    fe::Config config;
+    config.output.image_format = format;
+    config.output.image_bit_depth = 16;
+
+    fe::RunOutputWriter writer{base, config};
+    // The processor hands over the decoded frame; the writer asks it for the
+    // 16-bit rendering.
+    fe::DecodedFrame decoded;
+    decoded.render_bgr16 = [&deep_frame] { return deep_frame.clone(); };
+    writer.onDecodedFrameSelected(result.selected_frames[0], decoded);
+    // An 8-bit image given directly is widened so every file has one depth.
+    writer.onFrameSelected(result.selected_frames[1], shallow_frame);
+    writer.finalize(
+        "input.mov",
+        fe::ProcessOptions{},
+        fe::VideoInfo{16, 12, {1, 600}, {25, 1}, 5'000, "h264"},
+        result,
+        std::chrono::duration<double>{0.5});
+    const auto paths = writer.paths();
+
+    const auto first = cv::imread(
+        (paths.keyframe_dir / ("keyframe_0000_000002." + extension)).string(),
+        cv::IMREAD_UNCHANGED);
+    REQUIRE_FALSE(first.empty());
+    CHECK(first.type() == CV_16UC3);
+    REQUIRE(first.size() == deep_frame.size());
+    CHECK(cv::norm(first, deep_frame, cv::NORM_INF) == 0.0);
+
+    const auto second = cv::imread(
+        (paths.keyframe_dir / ("keyframe_0001_000004." + extension)).string(),
+        cv::IMREAD_UNCHANGED);
+    REQUIRE_FALSE(second.empty());
+    CHECK(second.type() == CV_16UC3);
+    CHECK(second.at<cv::Vec3w>(0, 0) == cv::Vec3w{40 * 257, 50 * 257, 60 * 257});
+
+    const auto summary = readText(paths.summary_path);
+    CHECK(hasSummaryField(
+        summary,
+        "Image format",
+        format == fe::ImageFormat::png
+            ? "PNG, 16-bit, compression level 1"
+            : "TIFF, 16-bit, LZW compression"));
+    CHECK(readText(paths.config_path).find("image_bit_depth: 16")
+        != std::string::npos);
+    std::filesystem::remove_all(base);
+  }
+}
+
+TEST_CASE("16-bit output is rejected where it cannot be honored") {
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const auto base = std::filesystem::temp_directory_path()
+      / ("frame_extractor_16bit_rejection_test_" + unique);
+  const cv::Mat deep_frame(12, 16, CV_16UC3, cv::Scalar{1000, 2000, 3000});
+
+  // JPEG with 16-bit is refused before any run directory is created.
+  fe::Config jpeg_config;
+  jpeg_config.output.image_bit_depth = 16;
+  CHECK_THROWS_AS((fe::RunOutputWriter{base, jpeg_config}), std::invalid_argument);
+  CHECK_FALSE(std::filesystem::exists(base));
+
+  std::filesystem::create_directories(base);
+  const fe::detail::ImageFileWriter jpeg_writer{fe::ImageFormat::jpg};
+  CHECK_THROWS_AS(
+      jpeg_writer.writeAtomically(base / "frame.jpg", deep_frame),
+      std::invalid_argument);
+  CHECK_FALSE(std::filesystem::exists(base / "frame.jpg"));
+
+  // An 8-bit run does not silently narrow a 16-bit image.
+  fe::Config png_config;
+  png_config.output.image_format = fe::ImageFormat::png;
+  fe::RunOutputWriter writer{base, png_config};
+  CHECK_THROWS_AS(
+      writer.onFrameSelected(sampleResult().selected_frames[0], deep_frame),
+      std::invalid_argument);
+  writer.discardEmpty();
+  std::filesystem::remove_all(base);
+}
+
 TEST_CASE("asynchronous output writer propagates background failures") {
   const auto unique = std::to_string(
       std::chrono::steady_clock::now().time_since_epoch().count());
@@ -506,6 +659,15 @@ TEST_CASE("atomic image writer validates paths without damaging existing output"
   const auto uppercase = base / "frame.PNG";
   png_writer.writeAtomically(uppercase, frame);
   CHECK_FALSE(cv::imread(uppercase.string(), cv::IMREAD_COLOR).empty());
+
+  const fe::detail::ImageFileWriter tiff_writer{fe::ImageFormat::tiff};
+  CHECK_THROWS_AS(
+      tiff_writer.writeAtomically(base / "frame.png", frame),
+      std::invalid_argument);
+  for (const char* name : {"frame.tiff", "frame.TIF"}) {
+    tiff_writer.writeAtomically(base / name, frame);
+    CHECK_FALSE(cv::imread((base / name).string(), cv::IMREAD_COLOR).empty());
+  }
 
   std::filesystem::remove_all(base);
 }

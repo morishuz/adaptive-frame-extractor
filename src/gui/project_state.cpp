@@ -90,9 +90,15 @@ ProjectState ProjectStore::load(const std::filesystem::path& input_video) const 
   if (!supportedFrameInterval(state.frame_interval)) {
     state.frame_interval = 8;
   }
-  state.image_format = root["image_format"].as<std::string>("jpg") == "png"
-      ? ImageFormat::png
-      : ImageFormat::jpg;
+  const auto image_format = root["image_format"].as<std::string>("jpg");
+  if (image_format == "png") {
+    state.image_format = ImageFormat::png;
+  } else if (image_format == "tiff") {
+    state.image_format = ImageFormat::tiff;
+  } else {
+    state.image_format = ImageFormat::jpg;
+  }
+  state.image_bit_depth = root["image_bit_depth"].as<int>(8) == 16 ? 16 : 8;
   state.group_keyframes_by_region =
       root["group_keyframes_by_region"].as<bool>(false);
   state.playhead_seconds = root["playhead_seconds"].as<double>(0.0);
@@ -136,6 +142,7 @@ void ProjectStore::save(
   root["selection"] = selectionChoiceName(state.selection);
   root["frame_interval"] = state.frame_interval;
   root["image_format"] = toString(state.image_format);
+  root["image_bit_depth"] = state.image_bit_depth == 16 ? 16 : 8;
   root["group_keyframes_by_region"] = state.group_keyframes_by_region;
   root["playhead_seconds"] = state.playhead_seconds;
   for (const auto& region : normalizeTimeRanges(state.regions)) {
@@ -180,8 +187,15 @@ ProcessOptions processOptionsForProject(
   return options;
 }
 
+int outputBitDepthForProject(const ProjectState& state) {
+  return state.image_format != ImageFormat::jpg && state.image_bit_depth == 16
+      ? 16
+      : 8;
+}
+
 Config configForProject(const ProjectState& state, Config profile_config) {
   profile_config.output.image_format = state.image_format;
+  profile_config.output.image_bit_depth = outputBitDepthForProject(state);
   return profile_config;
 }
 

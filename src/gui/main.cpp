@@ -676,7 +676,8 @@ int runApplication(int argc, char** argv) {
               gui::pathFromUtf8(input_video),
               gui::pathFromUtf8(output_directory),
               preview.timestamp_seconds,
-              project.image_format)) {
+              project.image_format,
+              gui::outputBitDepthForProject(project))) {
         manual_export_snapshot = gui::ManualFrameExportSnapshot{
             .phase = gui::ManualFrameExportPhase::saving};
         manual_export_notice_until = {};

@@ -25,6 +25,13 @@ class CombinedSelectedFrameSink final : public SelectedFrameSink {
     second_.onFrameSelected(selected, frame_bgr);
   }
 
+  void onDecodedFrameSelected(
+      const SelectedFrame& selected,
+      const DecodedFrame& frame) override {
+    first_.onDecodedFrameSelected(selected, frame);
+    second_.onDecodedFrameSelected(selected, frame);
+  }
+
   void onSelectionUpdated(const SelectedFrame& selected) override {
     first_.onSelectionUpdated(selected);
     second_.onSelectionUpdated(selected);

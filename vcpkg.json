@@ -20,7 +20,8 @@
         "intrinsics",
         "jpeg",
         "png",
-        "thread"
+        "thread",
+        "tiff"
       ]
     },
     "sdl3",

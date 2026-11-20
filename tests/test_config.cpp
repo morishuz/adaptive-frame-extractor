@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 
 namespace fe = frame_extractor;
 
@@ -55,6 +56,53 @@ TEST_CASE("config accepts compatible aliases and rejects invalid values") {
   const auto config = fe::loadConfig(temporary);
   CHECK_FALSE(config.dis.use_spatial_propagation);
   CHECK(config.output.image_format == fe::ImageFormat::jpg);
+
+  for (const char* alias : {"tiff", "TIF"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << "output:\n  image_format: " << alias << "\n";
+    }
+    const auto tiff_config = fe::loadConfig(temporary);
+    CHECK(tiff_config.output.image_format == fe::ImageFormat::tiff);
+    CHECK(fe::dumpConfigYaml(tiff_config).find("image_format: tiff")
+        != std::string::npos);
+  }
+
+  {
+    std::ofstream output{temporary};
+    REQUIRE(output.good());
+    output << "output:\n  image_format: bmp\n";
+  }
+  CHECK_THROWS_AS(fe::loadConfig(temporary), std::invalid_argument);
+
+  CHECK(fe::Config{}.output.image_bit_depth == 8);
+  CHECK(fe::dumpConfigYaml(fe::Config{}).find("image_bit_depth: 8")
+      != std::string::npos);
+  for (const char* format : {"png", "tiff"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << "output:\n  image_format: " << format
+             << "\n  image_bit_depth: 16\n";
+    }
+    const auto deep_config = fe::loadConfig(temporary);
+    CHECK(deep_config.output.image_bit_depth == 16);
+    CHECK(fe::dumpConfigYaml(deep_config).find("image_bit_depth: 16")
+        != std::string::npos);
+  }
+  // JPEG has no 16-bit mode, and only 8 and 16 are supported depths.
+  for (const char* invalid : {
+           "output:\n  image_format: jpg\n  image_bit_depth: 16\n",
+           "output:\n  image_bit_depth: 16\n",
+           "output:\n  image_format: png\n  image_bit_depth: 12\n"}) {
+    {
+      std::ofstream output{temporary};
+      REQUIRE(output.good());
+      output << invalid;
+    }
+    CHECK_THROWS_AS(fe::loadConfig(temporary), std::invalid_argument);
+  }
 
   {
     std::ofstream output{temporary};

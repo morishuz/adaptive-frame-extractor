@@ -21,9 +21,29 @@ bool extensionMatches(
   std::ranges::transform(extension, extension.begin(), [](unsigned char character) {
     return static_cast<char>(std::tolower(character));
   });
-  return format == ImageFormat::jpg
-      ? extension == ".jpg" || extension == ".jpeg"
-      : extension == ".png";
+  switch (format) {
+    case ImageFormat::jpg:
+      return extension == ".jpg" || extension == ".jpeg";
+    case ImageFormat::png:
+      return extension == ".png";
+    case ImageFormat::tiff:
+      return extension == ".tif" || extension == ".tiff";
+  }
+  return false;
+}
+
+std::vector<int> encodingParameters(
+    ImageFormat format,
+    const ImageEncodingSettings& settings) {
+  switch (format) {
+    case ImageFormat::jpg:
+      return {cv::IMWRITE_JPEG_QUALITY, settings.jpeg_quality};
+    case ImageFormat::png:
+      return {cv::IMWRITE_PNG_COMPRESSION, settings.png_compression_level};
+    case ImageFormat::tiff:
+      return {cv::IMWRITE_TIFF_COMPRESSION, tiffLzwCompression};
+  }
+  throw std::logic_error("Unknown image format");
 }
 
 }  // namespace
@@ -32,11 +52,7 @@ ImageFileWriter::ImageFileWriter(
     ImageFormat format,
     ImageEncodingSettings settings)
     : format_{format},
-      encoding_parameters_{format == ImageFormat::jpg
-          ? std::vector<int>{cv::IMWRITE_JPEG_QUALITY, settings.jpeg_quality}
-          : std::vector<int>{
-                cv::IMWRITE_PNG_COMPRESSION,
-                settings.png_compression_level}} {}
+      encoding_parameters_{encodingParameters(format, settings)} {}
 
 void ImageFileWriter::writeAtomically(
     const std::filesystem::path& path,
@@ -48,6 +64,13 @@ void ImageFileWriter::writeAtomically(
   }
   if (frame_bgr.empty()) {
     throw std::invalid_argument("image must not be empty");
+  }
+  const bool sixteen_bit = frame_bgr.depth() == CV_16U;
+  if (frame_bgr.depth() != CV_8U && !sixteen_bit) {
+    throw std::invalid_argument("image must have 8 or 16 bits per channel");
+  }
+  if (sixteen_bit && format_ == ImageFormat::jpg) {
+    throw std::invalid_argument("JPEG output supports only 8 bits per channel");
   }
 
   std::error_code error;

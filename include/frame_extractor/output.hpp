@@ -39,7 +39,12 @@ class RunOutputWriter final : public SelectedFrameSink {
       RunOutputOptions options = {});
   ~RunOutputWriter() override;
 
+  // Accepts an 8-bit or 16-bit BGR image. An 8-bit image is widened when the
+  // run is configured for 16-bit output.
   void onFrameSelected(const SelectedFrame& selected, const cv::Mat& frame_bgr) override;
+  void onDecodedFrameSelected(
+      const SelectedFrame& selected,
+      const DecodedFrame& frame) override;
 
   // Drains queued encodes, writes the manifest and summary, and returns the
   // processing runtime with the remaining writer-drain time included. This is
@@ -58,6 +63,7 @@ class RunOutputWriter final : public SelectedFrameSink {
 
  private:
   ImageFormat image_format_;
+  int image_bit_depth_;
   RunOutputOptions options_;
   RunPaths paths_;
   std::unique_ptr<detail::AsyncImageWriter> image_writer_;

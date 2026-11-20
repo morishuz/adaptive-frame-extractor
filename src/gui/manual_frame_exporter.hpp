@@ -39,7 +39,8 @@ class ManualFrameExporter final {
       std::filesystem::path input_video,
       std::filesystem::path output_directory,
       double timestamp_seconds,
-      ImageFormat image_format);
+      ImageFormat image_format,
+      int image_bit_depth = 8);
   void reset();
   [[nodiscard]] ManualFrameExportSnapshot takeSnapshot();
   void join();

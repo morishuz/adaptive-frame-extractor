@@ -321,6 +321,63 @@ std::function<cv::Mat()> fullBgrRenderer(
   };
 }
 
+cv::Mat convertToBgr16Once(const AVFrame& frame, int scaling_flags) {
+  const auto source_pixel_format = sourcePixelFormat(frame);
+  // AV_PIX_FMT_BGR48 is the native-endian layout, matching CV_16UC3.
+  SwsContext* context = sws_getContext(
+      frame.width,
+      frame.height,
+      source_pixel_format.format,
+      frame.width,
+      frame.height,
+      AV_PIX_FMT_BGR48,
+      scaling_flags,
+      nullptr,
+      nullptr,
+      nullptr);
+  if (context == nullptr) {
+    throw std::runtime_error("Cannot create 16-bit video color-conversion context");
+  }
+  try {
+    configureColorspace(*context, frame, source_pixel_format.full_range);
+
+    cv::Mat bgr(cv::Size{frame.width, frame.height}, CV_16UC3);
+    std::array<std::uint8_t*, 4> destination_data{bgr.data, nullptr, nullptr, nullptr};
+    std::array<int, 4> destination_linesize{static_cast<int>(bgr.step[0]), 0, 0, 0};
+    const int converted_rows = sws_scale(
+        context,
+        frame.data,
+        frame.linesize,
+        0,
+        frame.height,
+        destination_data.data(),
+        destination_linesize.data());
+    if (converted_rows != frame.height) {
+      throw std::runtime_error(
+          "16-bit video color conversion returned an incomplete frame");
+    }
+    sws_freeContext(context);
+    return bgr;
+  } catch (...) {
+    sws_freeContext(context);
+    throw;
+  }
+}
+
+std::function<cv::Mat()> fullBgr16Renderer(
+    std::shared_ptr<AVFrame> frame,
+    int rotation_degrees) {
+  return [frame = std::move(frame), rotation_degrees] {
+    // Accurate rounding and bit-exact mode select swscale's reference code, so
+    // saved 16-bit pixels do not depend on the platform's SIMD paths. This
+    // runs only for selected frames, so the slower path is not a concern.
+    return applyDisplayRotation(
+        convertToBgr16Once(
+            *frame, SWS_BILINEAR | SWS_ACCURATE_RND | SWS_BITEXACT),
+        rotation_degrees);
+  };
+}
+
 cv::Size boundedDisplaySize(
     cv::Size source_size,
     int maximum_width,
@@ -681,6 +738,7 @@ class VideoDecoder::Impl {
     cv::Mat analysis_gray;
     std::function<cv::Mat()> render_bgr;
     std::function<cv::Mat(int, int)> render_preview_bgr;
+    std::function<cv::Mat()> render_bgr16;
     if (analysis_frame_size_) {
       analysis_gray = std::move(converted);
     } else if (!defer_full_bgr_) {
@@ -689,6 +747,7 @@ class VideoDecoder::Impl {
     if (defer_full_bgr_) {
       auto retained_frame = cloneFrame(frame);
       render_bgr = fullBgrRenderer(retained_frame, info_.rotation_degrees);
+      render_bgr16 = fullBgr16Renderer(retained_frame, info_.rotation_degrees);
       render_preview_bgr = previewBgrRenderer(
           std::move(retained_frame), info_.rotation_degrees);
     }
@@ -723,7 +782,8 @@ class VideoDecoder::Impl {
             analysis_conversion_method},
         std::move(analysis_gray),
         std::move(render_bgr),
-        std::move(render_preview_bgr)};
+        std::move(render_preview_bgr),
+        std::move(render_bgr16)};
   }
 
   void cleanup() noexcept {
@@ -793,6 +853,16 @@ const cv::Mat& DecodedFrame::fullBgr() const {
     throw std::runtime_error("decoded frame has no full-resolution BGR representation");
   }
   return bgr;
+}
+
+cv::Mat DecodedFrame::fullBgr16() const {
+  if (render_bgr16) {
+    return render_bgr16();
+  }
+  // 257 maps 0..255 onto 0..65535 exactly.
+  cv::Mat widened;
+  fullBgr().convertTo(widened, CV_16U, 257.0);
+  return widened;
 }
 
 cv::Mat DecodedFrame::previewBgr(int maximum_width, int maximum_height) const {

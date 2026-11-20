@@ -24,6 +24,7 @@ void writeRunReports(
     const ProcessingResult& result,
     std::chrono::duration<double> runtime,
     ImageFormat image_format,
+    int image_bit_depth,
     bool group_keyframes_by_region,
     const ImageEncodingSettings& encoding_settings,
     std::string_view failure_message = {});

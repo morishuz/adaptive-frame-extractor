@@ -97,7 +97,8 @@ std::filesystem::path sourceDirectoryName(const std::filesystem::path& input_vid
 std::filesystem::path outputPath(
     const std::filesystem::path& directory,
     const DecodedFrame& frame,
-    ImageFormat image_format) {
+    ImageFormat image_format,
+    int image_bit_depth) {
   std::ostringstream filename;
   // Seek-derived frame ordinals can collide on variable-rate video. Use the
   // source timestamp directly, without rounding it to a frame rate or seconds.
@@ -106,6 +107,11 @@ std::filesystem::path outputPath(
   } else {
     filename << "frame_" << std::setfill('0') << std::setw(6)
              << std::max<std::int64_t>(0, frame.decoded_frame_index);
+  }
+  // An 8-bit and a 16-bit capture of the same frame share a format extension.
+  // Name them apart so that one does not count as the other already existing.
+  if (image_bit_depth == 16) {
+    filename << "_16bit";
   }
   filename << '.' << toString(image_format);
   return directory / filename.str();
@@ -145,7 +151,8 @@ class ManualFrameExporter::Impl {
       std::filesystem::path input_video,
       std::filesystem::path output_directory,
       double timestamp_seconds,
-      ImageFormat image_format) {
+      ImageFormat image_format,
+      int image_bit_depth) {
     reapFinished();
     if (worker_.joinable()) {
       return false;
@@ -173,12 +180,14 @@ class ManualFrameExporter::Impl {
            input_video = std::move(input_video),
            output_directory = std::move(output_directory),
            timestamp_seconds,
-           image_format] {
+           image_format,
+           image_bit_depth] {
             run(
                 input_video,
                 output_directory,
                 timestamp_seconds,
-                image_format);
+                image_format,
+                image_bit_depth);
           }};
     } catch (const std::exception& error) {
       std::lock_guard lock{mutex_};
@@ -216,8 +225,10 @@ class ManualFrameExporter::Impl {
       const std::filesystem::path& input_video,
       const std::filesystem::path& output_directory,
       double target_seconds,
-      ImageFormat image_format) noexcept {
+      ImageFormat image_format,
+      int image_bit_depth) noexcept {
     try {
+      validateImageBitDepth(image_format, image_bit_depth);
       const auto frame_directory = output_directory / "manual_frames"
           / sourceDirectoryName(input_video);
       auto source = source_factory_(input_video);
@@ -243,12 +254,16 @@ class ManualFrameExporter::Impl {
       }
 
       const auto output_path = outputPath(
-          frame_directory, *selected, image_format);
+          frame_directory, *selected, image_format, image_bit_depth);
       const bool already_exists = existingRegularFile(output_path);
 
       if (!already_exists) {
-        detail::ImageFileWriter{image_format}.writeAtomically(
-            output_path, selected->fullBgr());
+        const detail::ImageFileWriter writer{image_format};
+        if (image_bit_depth == 16) {
+          writer.writeAtomically(output_path, selected->fullBgr16());
+        } else {
+          writer.writeAtomically(output_path, selected->fullBgr());
+        }
       }
 
       std::lock_guard lock{mutex_};
@@ -302,12 +317,14 @@ bool ManualFrameExporter::start(
     std::filesystem::path input_video,
     std::filesystem::path output_directory,
     double timestamp_seconds,
-    ImageFormat image_format) {
+    ImageFormat image_format,
+    int image_bit_depth) {
   return impl_->start(
       std::move(input_video),
       std::move(output_directory),
       timestamp_seconds,
-      image_format);
+      image_format,
+      image_bit_depth);
 }
 
 void ManualFrameExporter::reset() { impl_->reset(); }

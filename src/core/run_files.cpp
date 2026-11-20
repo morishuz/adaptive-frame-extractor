@@ -274,6 +274,7 @@ std::string buildSummary(
     const ProcessingResult& result,
     std::chrono::duration<double> runtime,
     ImageFormat image_format,
+    int image_bit_depth,
     bool group_keyframes_by_region,
     const ImageEncodingSettings& encoding_settings,
     std::string_view failure_message) {
@@ -351,15 +352,24 @@ std::string buildSummary(
         "Selection",
         "Adaptive (" + humanize(process_options.selection_profile) + " profile)");
   }
-  if (image_format == ImageFormat::jpg) {
-    summary.field(
-        "Image format",
-        "JPEG, quality " + std::to_string(encoding_settings.jpeg_quality));
-  } else {
-    summary.field(
-        "Image format",
-        "PNG, compression level "
-            + std::to_string(encoding_settings.png_compression_level));
+  switch (image_format) {
+    case ImageFormat::jpg:
+      summary.field(
+          "Image format",
+          "JPEG, quality " + std::to_string(encoding_settings.jpeg_quality));
+      break;
+    case ImageFormat::png:
+      summary.field(
+          "Image format",
+          std::string{image_bit_depth == 16 ? "PNG, 16-bit" : "PNG"}
+              + ", compression level "
+              + std::to_string(encoding_settings.png_compression_level));
+      break;
+    case ImageFormat::tiff:
+      summary.field(
+          "Image format",
+          "TIFF, " + std::to_string(image_bit_depth) + "-bit, LZW compression");
+      break;
   }
   summary.field(
       "Keyframe layout",
@@ -516,6 +526,7 @@ void writeRunReports(
     const ProcessingResult& result,
     std::chrono::duration<double> runtime,
     ImageFormat image_format,
+    int image_bit_depth,
     bool group_keyframes_by_region,
     const ImageEncodingSettings& encoding_settings,
     std::string_view failure_message) {
@@ -528,6 +539,7 @@ void writeRunReports(
       result,
       runtime,
       image_format,
+      image_bit_depth,
       group_keyframes_by_region,
       encoding_settings,
       failure_message);

@@ -191,6 +191,13 @@ class DeferredFrameSource final : public fe::FrameSource {
       return cv::Mat(
           24, 32, CV_8UC3, cv::Scalar::all(static_cast<double>(index))).clone();
     };
+    // 257 * index + 1 is not a multiple of 257, so it cannot come from
+    // widening an 8-bit image.
+    frame.render_bgr16 = [index] {
+      return cv::Mat(
+          48, 64, CV_16UC3,
+          cv::Scalar::all(static_cast<double>(index * 257U + 1U))).clone();
+    };
     return frame;
   }
 
@@ -208,6 +215,25 @@ class DeferredFrameSource final : public fe::FrameSource {
 class DiscardingSelectionSink final : public fe::SelectedFrameSink {
  public:
   void onFrameSelected(const fe::SelectedFrame&, const cv::Mat&) override {}
+};
+
+class DeepSelectionSink final : public fe::SelectedFrameSink {
+ public:
+  void onFrameSelected(const fe::SelectedFrame&, const cv::Mat&) override {
+    ++shallow_calls;
+  }
+
+  void onDecodedFrameSelected(
+      const fe::SelectedFrame&,
+      const fe::DecodedFrame& frame) override {
+    const cv::Mat deep = frame.fullBgr16();
+    types.push_back(deep.type());
+    first_values.push_back(deep.at<cv::Vec3w>(0, 0)[0]);
+  }
+
+  std::size_t shallow_calls{};
+  std::vector<int> types;
+  std::vector<unsigned short> first_values;
 };
 
 class BoundedPreviewSink final : public fe::FramePreviewSink {
@@ -408,6 +434,24 @@ TEST_CASE("selected frames reuse materialized BGR for their bounded preview") {
   REQUIRE(analyzed_position);
   REQUIRE(selected_position);
   CHECK(*analyzed_position < *selected_position);
+}
+
+TEST_CASE("selected frames reach the sink undecoded so it can take 16-bit pixels") {
+  DeferredFrameSource source{3};
+  DeepSelectionSink selection;
+  fe::ProcessOptions options;
+  options.fixed_frame_interval = 2U;
+
+  const auto result = fe::processFrames(
+      source, testConfig(), options, nullptr, nullptr, &selection);
+
+  REQUIRE(result.selected_frames.size() == 2U);
+  CHECK(selection.shallow_calls == 0U);
+  CHECK(selection.types == std::vector<int>{CV_16UC3, CV_16UC3});
+  CHECK(selection.first_values == std::vector<unsigned short>{1U, 515U});
+  // With no preview to feed, nothing asks for the 8-bit image.
+  CHECK(source.fullRenderCount() == 0U);
+  CHECK(source.previewRenderCount() == 0U);
 }
 
 TEST_CASE("processor uses target-area analysis sizing without upscaling") {
