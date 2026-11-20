@@ -3,12 +3,16 @@
 #include "extraction_source.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -153,5 +157,114 @@ TEST_CASE("run reports retain decoder metadata discovered while processing") {
   const auto label = summary.find("Hardware decoding:");
   REQUIRE(label != std::string::npos);
   CHECK(summary.substr(label, summary.find('\n', label) - label).ends_with("Yes"));
+  std::filesystem::remove_all(output);
+}
+
+namespace {
+
+// Values that are not multiples of 257 cannot survive a trip through 8 bits.
+cv::Mat deepPattern() {
+  cv::Mat deep(24, 32, CV_16UC3);
+  for (int row = 0; row < deep.rows; ++row) {
+    for (int column = 0; column < deep.cols; ++column) {
+      deep.at<cv::Vec3w>(row, column) = cv::Vec3w{
+          static_cast<unsigned short>(column * 2001 + 1),
+          static_cast<unsigned short>(row * 2503 + 2),
+          static_cast<unsigned short>(65535 - column * 999 - row * 497)};
+    }
+  }
+  return deep;
+}
+
+class DeepFrameSource final : public fe::FrameSource {
+ public:
+  DeepFrameSource() {
+    info_.width = 32;
+    info_.height = 24;
+    info_.time_base = {1, 1};
+    info_.average_frame_rate = {1, 1};
+  }
+
+  const fe::VideoInfo& info() const override { return info_; }
+
+  std::optional<fe::DecodedFrame> read() override {
+    if (next_ >= 2) {
+      return std::nullopt;
+    }
+    fe::DecodedFrame frame;
+    frame.decoded_frame_index = next_;
+    frame.pts = next_;
+    frame.time_base = info_.time_base;
+    frame.render_bgr = [] {
+      return cv::Mat(24, 32, CV_8UC3, cv::Scalar{20, 80, 140}).clone();
+    };
+    frame.render_bgr16 = [] { return deepPattern(); };
+    ++next_;
+    return frame;
+  }
+
+ private:
+  fe::VideoInfo info_;
+  int next_{};
+};
+
+class CountingSelectionSink final : public fe::SelectedFrameSink {
+ public:
+  void onFrameSelected(const fe::SelectedFrame&, const cv::Mat& frame_bgr) override {
+    ++selections;
+    all_eight_bit = all_eight_bit && frame_bgr.type() == CV_8UC3;
+  }
+
+  std::size_t selections{};
+  bool all_eight_bit{true};
+};
+
+}  // namespace
+
+TEST_CASE("16-bit extraction keeps source precision from decoder to file") {
+  bool with_second_sink = false;
+  SECTION("writer alone") {}
+  SECTION("writer combined with another sink") { with_second_sink = true; }
+
+  const auto output = uniqueOutputDirectory("deep_run");
+  fe::Config config;
+  config.output.image_format = fe::ImageFormat::tiff;
+  config.output.image_bit_depth = 16;
+  fe::ProcessOptions options;
+  options.fixed_frame_interval = 1U;
+  CountingSelectionSink second_sink;
+
+  const auto result = fe::detail::runExtractionWithSource(
+      fe::ExtractionRunRequest{"video.mov", output, config, options, {}},
+      [](const fe::ExtractionRunRequest&) {
+        return std::make_unique<DeepFrameSource>();
+      },
+      nullptr, nullptr, with_second_sink ? &second_sink : nullptr);
+
+  REQUIRE(result.status == fe::ExtractionRunStatus::completed);
+  REQUIRE(result.processing.selected_frames.size() == 2U);
+  REQUIRE(result.output_paths);
+
+  const cv::Mat expected = deepPattern();
+  std::size_t images = 0U;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator{
+           result.output_paths->keyframe_dir}) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".tiff") {
+      continue;
+    }
+    const auto image = cv::imread(entry.path().string(), cv::IMREAD_UNCHANGED);
+    REQUIRE_FALSE(image.empty());
+    CHECK(image.type() == CV_16UC3);
+    REQUIRE(image.size() == expected.size());
+    CHECK(cv::norm(image, expected, cv::NORM_INF) == 0.0);
+    ++images;
+  }
+  CHECK(images == 2U);
+  if (with_second_sink) {
+    // The other sink still gets the ordinary 8-bit image.
+    CHECK(second_sink.selections == 2U);
+    CHECK(second_sink.all_eight_bit);
+  }
+
   std::filesystem::remove_all(output);
 }

@@ -440,7 +440,12 @@ ProcessingResult processFrames(
         segment->region_index};
 
     emit(observer, analyzed);
-    if (segment->current_trigger.triggered && selected_frame_sink != nullptr) {
+    // Render the 8-bit image before the preview only when a preview will use
+    // it. Without one, the selected-frame sink asks for the depth it needs, so
+    // a 16-bit run does not also pay for an 8-bit conversion.
+    if (segment->current_trigger.triggered
+        && selected_frame_sink != nullptr
+        && frame_preview_sink != nullptr) {
       const auto started = Clock::now();
       (void)segment->current_frame.fullBgr();
       result.timings.keyframe_sink_seconds += elapsedSeconds(started);
