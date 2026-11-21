@@ -9,6 +9,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <stdexcept>
@@ -295,6 +296,80 @@ TEST_CASE("automatic analysis preserves native planar high-bit-depth luma") {
   REQUIRE(analysis_frames.size() == 3U);
   CHECK(cv::norm(analysis_frames[0], analysis_frames[1], cv::NORM_INF) <= 1.0);
   CHECK(cv::norm(analysis_frames[0], analysis_frames[2], cv::NORM_INF) <= 1.0);
+}
+
+namespace {
+
+// Bytes between the last pixel of an image and the end of its allocation.
+std::ptrdiff_t bytesAfterLastPixel(const cv::Mat& image) {
+  REQUIRE_FALSE(image.empty());
+  const uchar* image_end = image.ptr(image.rows - 1)
+      + static_cast<std::size_t>(image.cols) * image.elemSize();
+  return image.datalimit - image_end;
+}
+
+}  // namespace
+
+TEST_CASE("images converted by swscale keep spare room after the last row") {
+  // swscale stores whole SIMD vectors, so at some widths it writes past the
+  // last pixel of a tightly packed destination. 72 pixels is one such width
+  // for YUV 4:2:0 to BGR24.
+  const MaterializedFixture fixture{"unpadded_width_ffv1.mkv"};
+  constexpr std::ptrdiff_t minimum_spare_bytes = 64;
+
+  SECTION("frames converted while decoding") {
+    fe::VideoDecoder decoder{fixture.path()};
+    std::size_t count = 0;
+    while (const auto frame = decoder.read()) {
+      CHECK(frame->bgr.size() == cv::Size{72, 34});
+      CHECK(frame->bgr.type() == CV_8UC3);
+      CHECK(frame->bgr.isContinuous());
+      CHECK(bytesAfterLastPixel(frame->bgr) >= minimum_spare_bytes);
+      ++count;
+    }
+    CHECK(count == 2U);
+  }
+
+  SECTION("deferred full-resolution frames") {
+    fe::VideoDecoderOptions options;
+    options.defer_full_bgr = true;
+    fe::VideoDecoder decoder{fixture.path(), options};
+    const auto frame = decoder.read();
+    REQUIRE(frame);
+    const auto& full = frame->fullBgr();
+    CHECK(full.size() == cv::Size{72, 34});
+    CHECK(full.isContinuous());
+    CHECK(bytesAfterLastPixel(full) >= minimum_spare_bytes);
+  }
+
+  SECTION("analysis frames converted by swscale") {
+    // Asking for the source area keeps the frame at full size, which routes
+    // the grayscale conversion through swscale instead of the OpenCV resize.
+    fe::VideoDecoderOptions options;
+    options.defer_full_bgr = true;
+    options.target_analysis_area_px = 72 * 34;
+    fe::VideoDecoder decoder{fixture.path(), options};
+    const auto frame = decoder.read();
+    REQUIRE(frame);
+    CHECK(frame->timings.analysis_conversion_method
+          == fe::AnalysisConversionMethod::ffmpeg_fallback);
+    CHECK(frame->analysis_gray.size() == cv::Size{72, 34});
+    CHECK(frame->analysis_gray.type() == CV_8UC1);
+    CHECK(frame->analysis_gray.isContinuous());
+    CHECK(bytesAfterLastPixel(frame->analysis_gray) >= minimum_spare_bytes);
+  }
+
+  SECTION("both paths produce the same picture") {
+    fe::VideoDecoder eager{fixture.path()};
+    fe::VideoDecoderOptions options;
+    options.defer_full_bgr = true;
+    fe::VideoDecoder deferred{fixture.path(), options};
+    const auto eager_frame = eager.read();
+    const auto deferred_frame = deferred.read();
+    REQUIRE(eager_frame);
+    REQUIRE(deferred_frame);
+    CHECK(cv::norm(eager_frame->bgr, deferred_frame->fullBgr(), cv::NORM_INF) == 0.0);
+  }
 }
 
 TEST_CASE("decoder can defer color conversion without adaptive analysis") {
