@@ -330,7 +330,7 @@ TEST_CASE("images converted by swscale keep spare room after the last row") {
     CHECK(count == 2U);
   }
 
-  SECTION("deferred full-resolution and analysis frames") {
+  SECTION("deferred full-resolution frames") {
     fe::VideoDecoderOptions options;
     options.defer_full_bgr = true;
     fe::VideoDecoder decoder{fixture.path(), options};
@@ -340,6 +340,23 @@ TEST_CASE("images converted by swscale keep spare room after the last row") {
     CHECK(full.size() == cv::Size{72, 34});
     CHECK(full.isContinuous());
     CHECK(bytesAfterLastPixel(full) >= minimum_spare_bytes);
+  }
+
+  SECTION("analysis frames converted by swscale") {
+    // Asking for the source area keeps the frame at full size, which routes
+    // the grayscale conversion through swscale instead of the OpenCV resize.
+    fe::VideoDecoderOptions options;
+    options.defer_full_bgr = true;
+    options.target_analysis_area_px = 72 * 34;
+    fe::VideoDecoder decoder{fixture.path(), options};
+    const auto frame = decoder.read();
+    REQUIRE(frame);
+    CHECK(frame->timings.analysis_conversion_method
+          == fe::AnalysisConversionMethod::ffmpeg_fallback);
+    CHECK(frame->analysis_gray.size() == cv::Size{72, 34});
+    CHECK(frame->analysis_gray.type() == CV_8UC1);
+    CHECK(frame->analysis_gray.isContinuous());
+    CHECK(bytesAfterLastPixel(frame->analysis_gray) >= minimum_spare_bytes);
   }
 
   SECTION("both paths produce the same picture") {
