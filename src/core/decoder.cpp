@@ -22,6 +22,7 @@ extern "C" {
 #include <chrono>
 #include <cerrno>
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -102,6 +103,26 @@ void configureColorspace(
       1 << 16));
 }
 
+// swscale's SIMD writers store whole vectors, so the last row of a conversion
+// can be written a few bytes past its final pixel. FFmpeg pads its own image
+// buffers for this; a plain cv::Mat ends exactly at the last pixel. Allocate
+// spare rows after the image and return a view of the visible ones, so those
+// writes stay inside the allocation. The view keeps the packed row stride.
+constexpr std::size_t swscale_overwrite_bytes = 64U;
+
+cv::Mat swscaleDestination(cv::Size size, int type) {
+  if (size.width <= 0 || size.height <= 0) {
+    throw std::invalid_argument("video conversion needs a non-empty destination");
+  }
+  const std::size_t row_bytes =
+      static_cast<std::size_t>(size.width)
+      * static_cast<std::size_t>(CV_ELEM_SIZE(type));
+  const int spare_rows = static_cast<int>(
+      (swscale_overwrite_bytes + row_bytes - 1U) / row_bytes);
+  cv::Mat storage(size.height + spare_rows, size.width, type);
+  return storage.rowRange(0, size.height);
+}
+
 cv::Mat convertToBgr(
     const AVFrame& frame,
     cv::Size destination_size,
@@ -125,7 +146,7 @@ cv::Mat convertToBgr(
   }
   configureColorspace(*context, frame, source_pixel_format.full_range);
 
-  cv::Mat bgr(destination_size, CV_8UC3);
+  cv::Mat bgr = swscaleDestination(destination_size, CV_8UC3);
   std::array<std::uint8_t*, 4> destination_data{bgr.data, nullptr, nullptr, nullptr};
   std::array<int, 4> destination_linesize{static_cast<int>(bgr.step[0]), 0, 0, 0};
   const int converted_rows = sws_scale(
@@ -164,7 +185,7 @@ cv::Mat convertToGray(
   }
   configureColorspace(*context, frame, source_pixel_format.full_range);
 
-  cv::Mat gray(destination_size, CV_8UC1);
+  cv::Mat gray = swscaleDestination(destination_size, CV_8UC1);
   std::array<std::uint8_t*, 4> destination_data{gray.data, nullptr, nullptr, nullptr};
   std::array<int, 4> destination_linesize{static_cast<int>(gray.step[0]), 0, 0, 0};
   const int converted_rows = sws_scale(
